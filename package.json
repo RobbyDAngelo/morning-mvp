@@ -6,7 +6,7 @@
   "type": "module",
   "engines": { "node": ">=20" },
   "scripts": {
-    "test": "node --test --import tsx test/filters.test.mjs test/rank.test.mjs test/people.test.mjs test/one-thing.test.mjs test/state.test.mjs test/promises.test.mjs test/decisions.test.mjs test/weekly-arc.test.mjs test/people-facts.test.mjs test/trends.test.mjs test/sync-state.test.mjs test/sync-cli.test.mjs test/enrich-summaries.test.mjs test/save-calendar-events.test.mjs",
+    "test": "node --test --import tsx test/filters.test.mjs test/rank.test.mjs test/people.test.mjs test/one-thing.test.mjs test/state.test.mjs test/promises.test.mjs test/decisions.test.mjs test/weekly-arc.test.mjs test/people-facts.test.mjs test/trends.test.mjs test/sync-state.test.mjs test/sync-cli.test.mjs test/enrich-summaries.test.mjs test/save-calendar-events.test.mjs test/os-detect.test.mjs",
     "test:adversarial": "node --test --import tsx test/adversarial.test.mjs",
     "test:all": "node --test --import tsx 'test/*.test.mjs'",
     "collect": "node --import tsx scripts/collect-all.mjs",
