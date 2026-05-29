@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Per-day generated output (never commit, regenerated daily)
+data/
+
+# Persistent state. Contains real names, emails, weekly mission, fact memory.
+# NEVER commit. Each install grows its own.
+state/
+
+# Local config. Basecamp tokens, sync flags, custom metrics shell commands.
+# Use config.example.json as the public template.
+config.local.json
+
+# Local identity. Name, email, persona, signoff.
+# Auto-resolved from ~/.claude/CLAUDE.md by scripts/identity-resolver.mjs.
+identity.local.json
+
+# Apple Mail MCP. Sibling repo, not vendored.
+# Mac installs clone it into ~/apple-mail-mcp/ via install.sh.
+apple-mail-mcp/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor cruft
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Brief output (lives at ~/morning-brief/, not inside the skill).
+# Listed for documentation; the path is outside the repo.
+# morning-brief/
+
+# Test scratch
+.tmp/
+coverage/

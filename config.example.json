@@ -1,0 +1,45 @@
+{
+  "basecamp": {
+    "_comment": "Copy this file to config.local.json and fill in. Personal access tokens come from https://launchpad.37signals.com/integrations. The user_id is the numeric id of YOUR Basecamp account, find it in your profile URL.",
+    "account_id": "0000000",
+    "user_id": "0000000",
+    "access_token": "YOUR_BASECAMP_ACCESS_TOKEN",
+    "user_agent": "morning-mvp (robby@robbydangelo.com)"
+  },
+  "filters": {
+    "_comment": "Per-user overrides applied on top of the built-in newsletter rules.",
+    "always_include_senders": [],
+    "always_drop_senders": [],
+    "always_include_domains": [],
+    "always_drop_domains": []
+  },
+  "metrics": [
+    {
+      "_comment": "Custom external metrics. Each command should print a single value to stdout. Render as a blockquote at the top of the brief. Default metrics (Basecamp open todos) ship with no config.",
+      "label": "Example custom metric",
+      "command": "echo 42",
+      "format": "${value} widgets pending"
+    }
+  ],
+  "sync": {
+    "_comment": "Tier 5 sync targets. All default OFF. Enable per-target by setting `enabled: true`. Each is idempotent within a day. Run `node scripts/unsync.mjs --date YYYY-MM-DD` to roll back.",
+    "notion": {
+      "enabled": false,
+      "_comment": "Either parent_page_id (creates child pages) OR database_url (creates rows). Get the ID from the URL of the parent page in Notion: notion.so/workspace/Title-<page_id_no_dashes>.",
+      "parent_page_id": "",
+      "database_url": ""
+    },
+    "calendar": {
+      "enabled": false,
+      "_comment": "Auto-create a 'Deep work: <One Thing>' event today. Defaults to the next 25-min slot for 90 min in the first writable calendar. Override with calendar_name / start / minutes.",
+      "calendar_name": null,
+      "start": null,
+      "minutes": 90
+    },
+    "reminders": {
+      "enabled": false,
+      "_comment": "Push slow-burn + 48h-deadline + aged-promise items into Apple Reminders. List auto-created if missing.",
+      "list_name": "Morning MVP"
+    }
+  }
+}
