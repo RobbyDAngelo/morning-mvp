@@ -33,29 +33,71 @@ Optional integer: window in days. Default 7. If Robby says "morning brief 14" th
 
 1. **Determine window.** Default 7 days. If argument is given, use it. Cap at 30.
 
-2. **Collect raw data.** Run the orchestrator script. It produces a single JSON dump at `~/.claude/skills/morning-mvp/data/raw-<YYYY-MM-DD>.json`:
+2. **Collect raw data.** Run the orchestrator script. It produces a single JSON dump at `<skill-root>/data/raw-<YYYY-MM-DD>.json`:
 
    ```bash
-   node ~/.claude/skills/morning-mvp/scripts/collect-all.mjs --days <N>
+   node <skill-root>/scripts/collect-all.mjs --days <N>
    ```
 
-   The orchestrator pulls:
-   - **Apple Mail**: every account's INBOX unread + recent + Sent in window, plus the user's own outgoing replies for cross-reference. Uses the local `apple-mail-mcp` modules.
-   - **Basecamp**: todos assigned to Robby with due_on within window. Skips cleanly if `config.local.json` is missing.
-   - **Calendar (fallback only)**: today + tomorrow's events via AppleScript against Calendar.app. This is the FALLBACK path; the primary path uses Fantastical MCP (see step 2a below). Skips cleanly if Automation permission is denied.
-   - **Metrics (Tier 3)**: each metric defined in `config.local.json` `metrics[]` is executed (shell command -> single value) and rendered as a one-line blockquote at the very top.
+   The orchestrator pulls each source through a provider dispatcher
+   (`scripts/collect-mail.mjs`, `scripts/collect-calendar.mjs`) that picks
+   the right module from `scripts/providers/` based on `config.local.json`
+   `providers` block and OS defaults:
 
-2a. **Pull calendar events via Fantastical (PREFERRED).** Robby uses Fantastical as his daily calendar UI. The Fantastical MCP reads the same underlying calendars (iCloud, Google, Childcare Elevated, etc.) but is faster than AppleScript and exposes calendars Apple Calendar may not surface (Square Appointments, Facebook for Biohacked Life, Childcare Elevated, multiple Gmail accounts).
+   | OS | Default mail provider | Default calendar provider |
+   |---|---|---|
+   | macOS | `apple-mail` (uses local apple-mail-mcp) | `fantastical` with `apple-calendar` fallback |
+   | Windows / Linux | `gmail` (MCP-via-workflow) | `google-calendar` (MCP-via-workflow) |
 
-   - Call `mcp__Fantastical__queryCalendarItems` with `query: ""` (match all) and `when: "<today> to <today+2 days>"`.
-   - If Fantastical is not running, the MCP returns an error like "Failed to connect to Fantastical". In that case, launch it via `open -ga Fantastical` and retry once. If it still fails, fall back to the AppleScript Calendar.app data already in `raw.calendar` (from step 2).
-   - Save the events into the raw JSON:
+   What lands in `raw.json` depends on the providers picked:
+   - **Mail** (any provider): per-account INBOX unread + recent + Sent in window, plus outgoing replies for cross-reference. macOS `apple-mail` returns full data directly. Cross-platform `gmail` returns `{skipped: true, requires_mcp: true, mcp_hint}` so step 2b below can fetch and merge.
+   - **Basecamp**: todos assigned to the user with due_on within window. Skips cleanly if `config.local.json` `basecamp` is unconfigured. Cross-platform via REST.
+   - **Calendar**: see step 2a for `fantastical` (mac) and the cross-platform `google-calendar` path.
+   - **Metrics (Tier 3)**: each metric defined in `config.local.json` `metrics[]` runs (shell command -> single value) and renders as a top-of-brief blockquote.
+
+   The `<skill-root>` placeholder resolves to the install path picked by
+   `install.sh` / `install.ps1`, typically `~/.claude/skills/morning-mvp/`
+   on macOS / Linux and `%USERPROFILE%\.claude\skills\morning-mvp\` on
+   Windows.
+
+2a. **Pull calendar events via the configured provider.** When the dispatcher's `raw.calendar.requires_mcp` is `true`, the calendar provider needs Claude to make the MCP call and merge the result. Two paths today:
+
+   **A) macOS, fantastical provider:** Call `mcp__Fantastical__queryCalendarItems` with `query: ""` (match all) and `when: "<today> to <today+2 days>"`. If Fantastical is not running, launch it via `open -ga Fantastical` and retry once. If it still fails, fall back to the AppleScript Calendar.app data already in `raw.calendar`.
+
+   **B) Windows / Linux, google-calendar provider:** Call whichever Google Calendar MCP tool is loaded in the session. Candidates listed under `raw.calendar.mcp_hint.candidate_mcp_tools`:
+   - `mcp__plugin_small-business_google_calendar__list_events`
+   - `mcp__pipedream-gmail__google_calendar-list-events`
+   - `mcp__d4c8b32a-1328-4483-8a11-e8fa23ade9a4__list_events`
+
+   Use `timeMin: <now ISO>`, `timeMax: <now+36h ISO>`, `singleEvents: true`,
+   `orderBy: "startTime"`. Probe each candidate tool name in order;
+   first that resolves is the right one.
+
+   In either path, save the events back into the raw JSON:
+
+   ```bash
+   node <skill-root>/scripts/save-calendar-events.mjs \
+     --raw <skill-root>/data/raw-<YYYY-MM-DD>.json \
+     --json '<MCP response JSON>'
+   ```
+
+   `save-calendar-events.mjs` auto-detects Fantastical / AppleScript / Google Calendar event shapes and normalizes to the canonical morning-mvp event shape. It also drops events with `status: "declined"`.
+
+2b. **Pull mail via the configured provider when MCP-via-workflow.** When `raw.mail.requires_mcp` is `true` (Gmail or Outlook providers), Claude makes the MCP calls and merges via `save-mail.mjs`. For Gmail:
+
+   - Read `raw.mail.mcp_hint.data_needed` to see the three buckets to fetch (unread, recent_inbox, sent_in_window) and the suggested Gmail query for each.
+   - For each bucket, call the Gmail MCP's search-or-list tool with the suggested Gmail query (`is:unread newer_than:Nd`, `in:inbox newer_than:Nd`, `in:sent newer_than:Nd`). Candidate MCP tools are under `raw.mail.mcp_hint.candidate_mcp_tools`.
+   - For each MCP response, save it into the raw JSON, targeting the right bucket:
+
      ```bash
-     node ~/.claude/skills/morning-mvp/scripts/save-calendar-events.mjs \
-       --raw ~/.claude/skills/morning-mvp/data/raw-<YYYY-MM-DD>.json \
-       --json '<fantastical response JSON>'
+     node <skill-root>/scripts/save-mail.mjs \
+       --raw <skill-root>/data/raw-<YYYY-MM-DD>.json \
+       --json '<MCP response JSON>' \
+       --target unread        # or recent_inbox, or sent_in_window
      ```
-   - This overwrites `raw.calendar.events` with the richer Fantastical data and sets `raw.calendar.source = "fantastical"`.
+
+   - `save-mail.mjs` accepts raw Gmail API shape (with `payload.headers`), pre-flattened Pipedream shape, and bare arrays. It dedupes by `message_id` across multiple invocations so multi-account merges are safe.
+   - On macOS with the `apple-mail` provider, this step is skipped (the data is already in `raw.mail`).
 
 3. **Pull Notion call notes for the window.** Call the Notion MCP search with these parameters:
    - Use `mcp__98a61912-ab1e-47b5-8c60-d7f46d1e3a0e__notion-search`

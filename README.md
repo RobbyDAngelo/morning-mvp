@@ -1,248 +1,131 @@
 # morning-mvp
 
-One printable page each morning. Who is waiting on Robby. What is due in the next 48 hours. Nothing else.
+One printable page each morning. Who is waiting on you. What is due in the next 48 hours. Nothing else.
 
-## What it pulls
-
-| Source | What it does | Auth |
-|---|---|---|
-| **Apple Mail** (all accounts) | Unread + recent inbox + sent (for reply cross-reference) across every configured account, last N days | None. Uses the local `apple-mail-mcp` modules through Mail.app's Automation permission. |
-| **Notion** | Pages edited in the last N days that look like call notes, meeting notes, 1-on-1 syncs | Notion MCP (already authenticated for Robby). |
-| **Basecamp 3/4** | Active todos assigned to Robby with due dates in window | Personal access token in `config.local.json`. Optional. Skill skips Basecamp cleanly when unconfigured. |
-| **Fantastical** (preferred) | Today + tomorrow's events, all 32 calendars across 7 accounts (iCloud, Gmail x4, RD NG, RD.com, TBL, Childcare Elevated, Square Appointments, Facebook for Biohacked Life, more) | Fantastical MCP via the Claude Desktop extension. Fantastical must be running (the skill auto-launches it via `open -ga Fantastical` if needed). |
-| **Apple Calendar** (fallback) | Same data but via AppleScript when Fantastical is unavailable | Calendar.app Automation permission (one-time grant in System Settings). |
-
-**Why Fantastical over Apple Calendar**: it reads the SAME underlying CalDAV calendars but via MCP it's faster, more reliable, has no permission prompt, and exposes calendars Apple Calendar may not surface (Square Appointments, Facebook for Biohacked Life, Childcare Elevated work calendar, four separate Gmail accounts). Same data flow for both: events land in `raw.calendar.events[]` and downstream pre-meeting cards work identically.
-
-## What it does NOT do
-
-- It does not poll on a schedule. Robby runs `/morning-mvp` (or types "morning brief") when he wants the brief.
-- It does not send mail or reply on Robby's behalf. Read + classify only.
-- It does not act as a CRM. Items live in their source system.
-- It does not duplicate `anthropic-skills:morning-extraction` (Gmail-only, Notion-write). Different sources, different output, different surface.
-
-## How it runs
-
-The skill workflow is in [SKILL.md](./SKILL.md). When invoked, Claude:
-
-1. Runs `scripts/collect-all.mjs --days 7`. That kicks off `collect-mail.mjs` and `collect-basecamp.mjs` in parallel and writes `data/raw-<DATE>.json`.
-2. Calls Notion MCP `notion-search` for last-7-day call notes and writes `data/notion-<DATE>.json`.
-3. Runs `scripts/filter-rank.mjs` over the raw + notion JSONs to drop noise, build the replied index, score every survivor, and write `data/ranked-<DATE>.json`.
-4. Writes the human brief at `~/morning-brief/<DATE>.md`.
-5. Runs `scripts/render-print.mjs` to write the print HTML alongside and open it in the browser.
-6. Runs `scripts/cleanup-apps.mjs` to quit Calendar.app and Fantastical now that the brief is on screen. Idempotent: a no-op if either app is already closed. The Fantastical MCP server (FantasticalMCP.app) and the macOS widget keep running so tomorrow's brief can query Fantastical immediately.
-
-## What the brief looks like (all four tiers live)
-
-Top to bottom:
-
-0. **Headline metrics** (T1 + T3). Blockquote line per metric. Derived (people waiting, open commitments, slow-burn count) from ranked data plus any custom external metric wired in `config.local.json` `metrics[]`.
-1. **`# The One Thing`** (T1). Single highest-impact action of the day with the WHY.
-2. **`## This week's mission`** (T3). Monday prompts for it, other days display it with "day N" tag, Sunday offers a recap. State at `data/week-state.json`.
-3. **`## Who is waiting on me`**, ranked.
-4. **`## Decisions waiting`** + **`## Responses waiting`** (T2). Each waiting item classified by heuristic.
-5. **`## Due in the next 48 hours`**, mail + Basecamp + calendar deadlines.
-6. **`## Today's meetings (next 36h)`** (T2). Per-event card with attendees, prior context, outcome, key question. Needs Calendar.app Automation permission.
-7. **`## Promises you made`** (T2). Open commitments extracted from Notion call notes + Sent folder. Age from source_date.
-8. **`## Slow burn (aging past threshold)`** (T3). Persistent first_seen dates; items past per-kind threshold (3d mail, 5d promise, 7d basecamp).
-9. **`## Today, by person`** (T1 + T4). One canonical row per counterparty. **Per-person facts (T4)** rendered as `**What I know:**` sub-list: payments received, recurring meetings, agreements, LLM-narrative observations. Facts persist at `data/people-facts.json`, deduped exactly, aging via TTL.
-10. **`## Active conversation threads`**, multi-round-trip threads.
-11. **`## Notion call notes`**, last 7 days.
-12. **`## Basecamp`**, assigned todos.
-13. **`## Drafted replies (ready to copy-paste)`** (T1). Up to 3 fenced markdown blocks in Robby's voice.
-14. **`## This week's recap`** (T4, Sunday only). Mission vs actuals, what closed, still open, new commitments, week-over-week sparklines (`▁▂▃▄▅▆▇█`). Driven by `data/trends.json` with rolling 12-week history.
-
-## Tier 4 memory layer
-
-Three new persistent stores feed the longevity of the brief:
-
-- **`data/people-facts.json`** — per-counterparty truths that accumulate over runs. Rule-extracted: payments (`paid you $X`), recurring meetings (`weekly X sync`), accepted invitations, agreements. LLM-added during workflow: cross-source observations Claude writes after generating the brief. Up to 25 facts per person, top 5 rendered, TTL-prunable.
-- **`data/trends.json`** — weekly snapshot of headline counts (waiting, decisions, promises, slow-burn, mail volume, VIP touchpoints) with rolling 12-week history. Powers Sunday recaps and week-over-week deltas.
-- **`scripts/recap.mjs`** — assembles Sunday recap data: items closed this week, still-open inventory, new this week, mission vs actuals, sparkline visualizations.
-
-## Tier 5 sync and share
-
-Three sync targets, all idempotent, all opt-in via `config.local.json`:
-
-```json
-"sync": {
-  "notion":    { "enabled": true, "parent_page_id": "abc..." },
-  "calendar":  { "enabled": true, "calendar_name": "Work", "minutes": 90 },
-  "reminders": { "enabled": true, "list_name": "Morning MVP" }
-}
-```
-
-- **Notion**: pushes the brief as a markdown page (or database row) into a configured parent. Same-day re-runs update rather than duplicate. Properties auto-set: Date, Day of week, One Thing, People waiting, Open commitments. Actual MCP call happens during the skill workflow (because Notion MCP lives in Claude's tool space); the prepare-script + record-script bracket it for idempotency.
-- **Calendar**: creates a `Deep work: <One Thing>` event today via AppleScript. Defaults to the next 25-minute slot, 90 minutes long, in the first writable calendar. Override calendar / start / minutes per config.
-- **Reminders**: pushes slow-burn items, 48h deadlines, and aged promises (>=2d open) into a "Morning MVP" reminders list (auto-created). Same name = no duplicate.
-
-Per-day records stored at `data/sync-state.json`. Rollback any day with:
-
-```bash
-node ~/.claude/skills/morning-mvp/scripts/unsync.mjs --date 2026-05-11
-```
-
-Dry-run anything via `--dry-run true` on the individual script or `push-all.mjs`. All three default OFF so the skill is safe to run on a fresh install without touching shared state.
+Built as a Claude Code skill. Works on macOS and Windows. Pulls from your mail, calendar, Notion call notes, and Basecamp todos; filters noise, ranks by urgency and relationship; writes a printable HTML one-pager and opens it in your browser.
 
 ## Install
 
-The skill is installed at `~/.claude/skills/morning-mvp/`. Install its lone dev dep (used to run the TypeScript modules from `apple-mail-mcp`):
+**macOS or Linux:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/RobbyDAngelo/morning-mvp/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+iwr -useb https://raw.githubusercontent.com/RobbyDAngelo/morning-mvp/main/install.ps1 | iex
+```
+
+The installer clones the skill to `~/.claude/skills/morning-mvp/` (or `%USERPROFILE%\.claude\skills\morning-mvp\` on Windows), installs dependencies, resolves your identity from `~/CLAUDE.md`, writes a default config tuned to your OS, and smoke-tests the install. Takes about 30 seconds.
+
+See [PARTNER-QUICKSTART.md](./PARTNER-QUICKSTART.md) for the five-minute setup walkthrough.
+
+## How to run it
+
+In Claude Code, ask any of:
+
+- "Run my morning brief"
+- "What is on my plate today?"
+- "Who is waiting on me?"
+
+Or invoke the skill directly. Claude executes a twelve-step workflow defined in [SKILL.md](./SKILL.md), produces a markdown brief at `~/morning-brief/<DATE>.md`, renders the printable HTML alongside, and opens it in your default browser. Press `Cmd+P` (macOS) or `Ctrl+P` (Windows) to print.
+
+## What the brief contains
+
+Top to bottom, depending on the day:
+
+| Section | What it shows |
+|---|---|
+| Headline metrics | Open commitments, slow-burn count, people waiting on you |
+| The One Thing | Single highest-impact action of the day with the why |
+| Weekly mission | Monday prompts for it, weekday displays it, Sunday recaps |
+| Who is waiting on me | Ranked list of unreplied messages |
+| Decisions waiting / Responses waiting | Same messages, classified |
+| Due in the next 48 hours | Mail deadlines, Basecamp todos, calendar items |
+| Today's meetings | One card per meeting with attendees, prior context, desired outcome |
+| Promises you made | Open commitments from Notion call notes + your sent mail |
+| Slow burn | Items past per-kind aging threshold |
+| Today, by person | One row per counterparty with VIP flag, source counts, what you know about them |
+| Active conversation threads | Multi-round-trip ongoing threads |
+| Notion call notes | Last seven days, summarized |
+| Basecamp | Your assigned todos |
+| Drafted replies | Up to three fenced markdown blocks ready to paste into your mail client |
+| Weekly recap | Sunday only: mission vs. actuals, what closed, sparklines |
+
+Empty sections render as `(none)`. The brief fits on two US Letter pages when printed.
+
+## What it pulls from, by platform
+
+| Source | macOS provider | Windows provider | Auth model |
+|---|---|---|---|
+| **Mail** | apple-mail (via [apple-mail-mcp](https://github.com/RobbyDAngelo/apple-mail-mcp)) | gmail (via Claude Code Gmail plugin) | macOS: Mail.app Automation grant. Windows: Gmail MCP OAuth (once at plugin install). |
+| **Calendar** | fantastical (with apple-calendar fallback) | google-calendar | macOS: Fantastical MCP. Windows: Google Calendar MCP OAuth. |
+| **Notion call notes** | notion-mcp | notion-mcp | Notion MCP, same on both. |
+| **Basecamp todos** | REST + personal access token | REST + personal access token | Optional. Skips cleanly if unconfigured. |
+| **Custom metrics** | shell commands per `config.local.json` | shell commands | Optional. |
+
+The provider model lives in `scripts/providers/`. Adding a new mail or calendar source means dropping one module that returns a normalized shape; see [ARCHITECTURE.md](./ARCHITECTURE.md) for the contract.
+
+## What it does NOT do
+
+- Does not poll on a schedule. You run it when you want the brief.
+- Does not send mail on your behalf. Read and classify only. Drafted replies are markdown blocks you paste into your mail client.
+- Does not act as a CRM. Items live in their source system.
+- Does not phone home or share data with anyone. Everything runs locally.
+
+## Configuration
+
+The installer writes a working default to `<install-root>/config.local.json`. Edit it to:
+
+- Change provider choices (`providers.mail`, `providers.calendar`, `providers.tasks`).
+- Add Basecamp credentials under `basecamp`.
+- Add custom shell-command metrics under `metrics[]`.
+- Enable Tier 5 sync targets (Notion writeback, calendar block, reminders push) under `sync`. All three default OFF.
+
+Identity (name, email, role, persona hints, hard rules) is auto-resolved from `~/CLAUDE.md` into `<install-root>/identity.local.json`. Edit `~/CLAUDE.md` to refine, then re-run:
 
 ```bash
-cd ~/.claude/skills/morning-mvp
-npm install
-npm test
+cd <install-root>
+node scripts/identity-resolver.mjs
 ```
 
-Tests should pass with zero failures.
+## Privacy
 
-## Configure Basecamp (optional)
+Three categories of data the skill creates, all gitignored:
 
-If you don't use Basecamp, skip this. The skill renders `Basecamp not configured` and moves on.
+- `data/`: per-day raw and ranked JSON. Auto-generated each morning.
+- `state/`: persistent memory (slow-burn aging timestamps, weekly mission, per-person facts, rolling metrics, sync rollback keys). Grows over time per install.
+- `config.local.json` + `identity.local.json`: your config and identity. Never commit.
 
-1. Get a personal access token. The cleanest path is the Basecamp API docs: https://github.com/basecamp/api/blob/master/sections/authentication.md. Generate an OAuth app or use an existing token from Launchpad: https://launchpad.37signals.com/integrations.
-2. Find your **account_id**: log into Basecamp, look at your URL. `https://3.basecamp.com/4567890/...` => `4567890`.
-3. Find your **user_id**: go to your Basecamp profile. The numeric id is in the URL.
-4. Copy and edit the config:
+The skill does not transmit your data anywhere. All processing happens locally. The Claude session that runs the skill sees the contents during synthesis, same as any other tool call.
 
-   ```bash
-   cp ~/.claude/skills/morning-mvp/config.example.json ~/.claude/skills/morning-mvp/config.local.json
-   # then edit config.local.json
-   ```
+## Tests
 
-5. Verify it works:
-
-   ```bash
-   node ~/.claude/skills/morning-mvp/scripts/collect-basecamp.mjs --days 7
-   ```
-
-   If the token is good you'll see `{ "todos": [...] }`. If not, you'll see a 401 error message.
-
-The config file is in `.gitignore`, so the token never leaks into any repo.
-
-## How to run
-
-Once installed, in Claude Code:
-
-```
-/morning-mvp
+```bash
+cd <install-root>
+npm test                  # standard suite (~170 tests)
+npm run test:adversarial  # security-style edge cases (25 tests)
+npm run test:all          # both
 ```
 
-or just say "morning brief", "what's on my plate", or "who's waiting on me".
+All tests pass on Node 20+.
 
-You can pass a window in days:
+## Architecture and contract docs
 
-```
-morning-mvp 14
-```
-
-When the skill finishes, your browser opens a printable one-pager. `Cmd+P` to print.
-
-## Architecture
-
-```
-scripts/
-├── collect-all.mjs        ← Orchestrator. Spawns mail + basecamp in parallel.
-├── collect-mail.mjs       ← Loads apple-mail-mcp modules. Pulls unread/recent/sent.
-├── collect-basecamp.mjs   ← Basecamp 3 REST. Skips gracefully if unconfigured.
-├── filters.mjs            ← Newsletter / notification rules. Pure functions.
-├── rank.mjs               ← Priority scoring, VIP set, replied index. Pure functions.
-├── filter-rank.mjs        ← Glue. Reads raw + notion + basecamp JSON, writes ranked.
-└── render-print.mjs       ← Markdown to print HTML, opens in browser.
-
-test/
-├── filters.test.mjs       ← Unit tests for filter rules.
-└── rank.test.mjs          ← Unit tests for scoring + ranking + replied-index.
-
-data/
-└── (gitignored output)    ← raw-<DATE>.json, notion-<DATE>.json, ranked-<DATE>.json.
-
-SKILL.md                   ← The skill prompt Claude reads.
-README.md                  ← This file.
-config.example.json        ← Copy to config.local.json and fill in.
-package.json               ← `npm test`, `npm run collect`, etc.
-```
-
-## How filtering works
-
-`filters.mjs` drops a message when ANY of these match:
-
-| Rule | Catches |
-|---|---|
-| Sender email matches `noreply / no-reply / notifications / newsletter / digest / marketing / mailer-daemon / postmaster / automated / alerts / bounce` | Most automated systems |
-| Sender domain is in the built-in blocklist | Mailchimp, SendGrid, Stripe, HubSpot, GitHub, Notion, Vercel, LinkedIn, YouTube, etc. |
-| Subject matches an automated pattern | "Your receipt", "Payment received", "Accepted: ...", "Updated invitation:", "Build status", etc. |
-| Subject is "Delivery Status Notification" | Bounces |
-
-What survives goes to scoring. Everything dropped is logged in `data/ranked-<DATE>.json` under `dropped[]` so you can audit decisions.
-
-## How ranking works
-
-For each surviving message:
-
-```
-priority =
-  (waiting_signal      * 3)     // unreplied AND personal sender AND asks for reply OR urgent
-+ (deadline_signal     * 4)     // explicit deadline cue in next 48h
-+ (vip_signal          * 2)     // sender exchanged 3+ messages with Robby in window
-+ recency_score                 // 2 if <24h old, 1 if <72h, 0 otherwise
-+ urgency_score * 0.5           // count of urgent keywords, capped at 5
-```
-
-Higher = higher in the brief. The render section keeps the top items per bucket.
-
-## How "unreplied" works
-
-Apple Mail's AppleScript surface doesn't cheaply expose RFC 822 In-Reply-To / References. The replied-index uses a conservative heuristic:
-
-> An inbound message is "replied" if any Sent message in the window has a subject equal to `Re: <inbound subject>` (case insensitive) AND a later date.
-
-This is conservative: a true-replied message can be missed (false unreplied), but a true-unreplied message is almost never marked replied. False unreplied is noise. False replied would silently drop work, which is worse. The tradeoff is intentional.
-
-## Why each part exists
-
-- **Why filters as a separate pure module**: filter rules change weekly. They have to be unit-testable in isolation. Embedded in the orchestrator they would never get tested.
-- **Why scripts emit JSON, not text**: every stage is composable. Tests verify shape. Claude reads the JSON for the synthesis pass without re-parsing prose.
-- **Why HTML + Markdown**: markdown is what Claude writes well. HTML is what prints well. Two artifacts, one source of truth.
-- **Why Basecamp is optional**: most users don't have it. Hard-requiring it would block the skill for everyone else.
+- [SKILL.md](./SKILL.md): the workflow Claude follows when invoked.
+- [ARCHITECTURE.md](./ARCHITECTURE.md): provider model, pipeline stages, persistence layout.
+- [HANDOFF.md](./HANDOFF.md): future-Claude-session onboarding.
+- [SECURITY-REVIEW.md](./SECURITY-REVIEW.md): adversarial audit findings.
+- [scripts/providers/README.md](./scripts/providers/README.md): provider contract.
 
 ## Troubleshooting
 
-**Mail collector hangs or returns empty**
-Mail.app is wedged. Restart it:
+- **Brief empty.** Inspect `data/raw-<DATE>.json` for `mail.errors[]` or empty arrays. Usually Mail.app Automation permission (macOS) or a not-yet-authenticated Gmail plugin (Windows).
+- **Calendar empty.** On macOS, confirm Fantastical is running. On Windows, confirm the Google Calendar plugin is authenticated.
+- **`Cannot find module .../apple-mail-mcp/src/...`** on macOS: run `git clone https://github.com/RobbyDAngelo/apple-mail-mcp.git ~/apple-mail-mcp && cd ~/apple-mail-mcp && npm install` then re-run.
+- **Basecamp 401**: regenerate the token at https://launchpad.37signals.com/integrations.
+- **HTML prints wrong on A4**: override in your browser's print dialog or edit `scripts/render-print.mjs` (US Letter is the default).
 
-```bash
-osascript -e 'tell application "Mail" to quit'
-sleep 5
-osascript -e 'tell application "Mail" to activate'
-```
+## License
 
-Then retry.
-
-**`Cannot find module .../apple-mail-mcp/src/...`**
-`apple-mail-mcp` isn't installed at `~/apple-mail-mcp/`. Install it or update the path in `scripts/collect-mail.mjs` (`APPLE_MAIL_ROOT`).
-
-**Basecamp 401**
-Token expired or invalid. Regenerate at https://launchpad.37signals.com/integrations.
-
-**Notion returns nothing**
-Notion MCP isn't connected, or there are no recently edited pages matching "call notes / meeting / 1-on-1 / sync". The Notion section renders `(none in last N days)`. Not an error.
-
-**HTML opens but looks wrong on print**
-The print CSS targets US Letter at 0.45in margins. If you're on A4, override in your browser's print dialog or edit `scripts/render-print.mjs`.
-
-## Memory hygiene
-
-`data/` is purged manually. To clean older briefs:
-
-```bash
-find ~/.claude/skills/morning-mvp/data -mtime +30 -delete
-find ~/morning-brief -mtime +90 -delete
-```
-
-## Related skills
-
-- `apple-mail-mcp` (the MCP server this depends on for mail access)
-- `anthropic-skills:morning-extraction` (Gmail-only, writes to Notion, no ranking)
-- `/gsd-progress` (project status, not personal triage)
-- `/gsd-check-todos` (claude-managed todos, not external sources)
+MIT. See [LICENSE](./LICENSE).

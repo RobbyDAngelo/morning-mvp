@@ -1,0 +1,40 @@
+{
+  "name": "morning-mvp",
+  "description": "One printable page each morning. Ranks who is waiting on you, what is due in the next 48 hours, and gives you drafted replies. Cross-platform: Apple Mail + Fantastical on macOS, Gmail + Google Calendar on Windows. Notion and Basecamp on either. Auto-resolves identity from your Claude Code CLAUDE.md.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Robby D'Angelo",
+    "url": "https://github.com/RobbyDAngelo"
+  },
+  "homepage": "https://github.com/RobbyDAngelo/morning-mvp",
+  "repository": "https://github.com/RobbyDAngelo/morning-mvp",
+  "license": "MIT",
+  "keywords": [
+    "productivity",
+    "morning-brief",
+    "email-triage",
+    "calendar",
+    "gmail",
+    "apple-mail",
+    "fantastical",
+    "google-calendar",
+    "notion",
+    "basecamp",
+    "cross-platform",
+    "windows",
+    "macos"
+  ],
+  "categories": [
+    "Productivity"
+  ],
+  "engines": {
+    "claude-code": ">=1.0.0",
+    "node": ">=20"
+  },
+  "capabilities": {
+    "skills": true
+  },
+  "main": {
+    "skills": "./"
+  }
+}
