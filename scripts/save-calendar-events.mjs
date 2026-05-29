@@ -38,17 +38,56 @@ try {
   process.exit(1);
 }
 
-// Fantastical returns either { items: [...], timezone } or a bare events array.
-// AppleScript collector returns { events: [...], window_hours, generated_at }.
+// Accept any of:
+//   - Fantastical:        { items: [...], timezone }
+//   - AppleScript:        { events: [...], window_hours, generated_at }
+//   - Google Calendar:    { items: [{summary, start: {dateTime|date}, end, ...}] }
+//   - Pre-flattened MCP:  { events: [...] }
+//   - Bare array:         [...]
 const events = Array.isArray(payload)
   ? payload
-  : payload.items ?? payload.events ?? [];
+  : payload.items ?? payload.events ?? payload.data ?? [];
+
+/**
+ * Normalize a Google Calendar attendee object ({email, displayName,
+ * responseStatus}) or a bare-string-email into a flat email string. The rest
+ * of the pipeline expects an array of strings under `attendees`.
+ */
+function normalizeAttendees(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((a) => {
+      if (typeof a === "string") return a;
+      if (a?.email) return a.email;
+      return "";
+    })
+    .filter(Boolean);
+}
 
 // Normalize each event into the canonical morning-mvp shape. Source-aware:
-//   - Fantastical events have `startDate` / `endDate` (ISO with TZ) and `calendarId`.
-//   - AppleScript events have `start` / `end` (Apple-locale strings) and `calendar` (name).
+//   - Google Calendar: `summary`, `start.dateTime`/`start.date`, `end.dateTime`,
+//                      `attendees: [{email}]`, `organizer.email`, `description`,
+//                      `htmlLink`, no `calendarId` (caller must pass it).
+//   - Fantastical:     `startDate` / `endDate` (ISO with TZ) and `calendarId`.
+//   - AppleScript:     `start` / `end` (Apple-locale strings) and `calendar` (name).
 const normalized = events
   .map((ev) => {
+    // Google Calendar shape: `summary` + `start.dateTime` is the strongest marker.
+    if (ev.summary !== undefined && ev.start && (ev.start.dateTime || ev.start.date)) {
+      return {
+        source: "google-calendar",
+        calendar: ev.calendarId || ev.organizer?.email || "",
+        title: ev.summary || "",
+        start: ev.start.dateTime || ev.start.date || "",
+        end: ev.end?.dateTime || ev.end?.date || "",
+        location: ev.location || "",
+        attendees: normalizeAttendees(ev.attendees),
+        notes_preview: (ev.description || "").slice(0, 300),
+        google_id: ev.id || "",
+        html_link: ev.htmlLink || "",
+        status: ev.status || "confirmed",
+      };
+    }
     if (ev.startDate || ev.calendarId) {
       // Fantastical shape.
       return {
@@ -58,7 +97,7 @@ const normalized = events
         start: ev.startDate || "",
         end: ev.endDate || "",
         location: ev.location || "",
-        attendees: ev.attendees || [], // Fantastical query doesn't include attendees by default
+        attendees: normalizeAttendees(ev.attendees),
         notes_preview: ev.notes || ev.description || "",
         fantastical_id: ev.id || "",
       };
@@ -71,11 +110,13 @@ const normalized = events
       start: ev.start || "",
       end: ev.end || "",
       location: ev.location || "",
-      attendees: Array.isArray(ev.attendees) ? ev.attendees : [],
+      attendees: normalizeAttendees(ev.attendees),
       notes_preview: ev.notes_preview || "",
     };
   })
-  .filter((ev) => ev.title && ev.title !== "(no title)");
+  .filter((ev) => ev.title && ev.title !== "(no title)")
+  // Drop declined invites; matches the existing skip-declined behavior.
+  .filter((ev) => ev.status !== "declined");
 
 const raw = JSON.parse(await readFile(args.raw, "utf8"));
 raw.calendar = {
