@@ -20,6 +20,7 @@ import {
 import { loadTrends, saveTrends, recordSnapshot } from "./trends.mjs";
 import { loadWeekState, mondayOf, decideAction } from "./weekly-arc.mjs";
 import { buildRecapData } from "./recap.mjs";
+import { loadResolvedIdentity } from "./identity-resolver.mjs";
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, arg, i, arr) => {
@@ -123,6 +124,12 @@ const people_view = buildPeopleView({
   repliedIndex,
 });
 
+// Load resolved identity once (from <skill-root>/identity.local.json, written
+// by scripts/identity-resolver.mjs at install). Threaded into scorers and
+// stamped onto the ranked output so SKILL.md's LLM step can compose drafts
+// in the right voice.
+const identity = await loadResolvedIdentity();
+
 const one_thing_candidates = scoreOneThingCandidates({
   rankedMessages: ranked,
   waiting_on_me,
@@ -130,6 +137,7 @@ const one_thing_candidates = scoreOneThingCandidates({
   basecamp_48h,
   notion: notion?.results ?? [],
   vipSet,
+  identity,
 });
 
 const draft_reply_targets = pickDraftTargets(waiting_on_me, 3);
@@ -139,10 +147,11 @@ const waiting_classified = tagItemsWithKind(waiting_on_me);
 const decisions_waiting = waiting_classified.filter((w) => w.decision_or_response === "decision");
 const responses_waiting = waiting_classified.filter((w) => w.decision_or_response === "response");
 
-// Tier 2: extract promises Robby made from Notion + Sent mail.
+// Tier 2: extract promises the user made from Notion + Sent mail.
 const promises_raw = extractAllPromises({
   notion: notion?.results ?? [],
   sent: raw.sent_in_window ?? [],
+  identity,
 });
 
 // Tier 3: reconcile persistent state. The reconciliation also captures the
@@ -276,6 +285,17 @@ const headline_metrics = [
 const out = {
   generated_at: new Date().toISOString(),
   window_days: raw.window_days,
+  identity: {
+    // Stamped from identity.local.json. SKILL.md's LLM step reads this to
+    // compose drafts in the user's voice. Hard rules are universal (per
+    // README) but persona / signoff vary per user.
+    name: identity.name || "",
+    first_name: identity.first_name || "",
+    email: identity.email || "",
+    role: identity.role || "",
+    signoff: identity.signoff || "",
+    persona_hints: identity.persona_hints || [],
+  },
   totals: {
     raw_inbound: deduped.length,
     dropped_as_noise: dropped.length,

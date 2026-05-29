@@ -1,10 +1,16 @@
 // "One Thing" candidate scoring. Picks the top N items across all categories
-// (waiting-on-me, 48h deadline, promise-Robby-made, slow-burn) and emits a
+// (waiting-on-me, 48h deadline, promise-the-user-made, slow-burn) and emits a
 // ranked list with impact_signal text for each. The LLM in the skill workflow
 // then chooses exactly one survivor from the top 5.
 //
 // The point of pre-scoring in code: keep the LLM's job to discrimination, not
 // search. The LLM cannot read all 80 messages and find the lever; the code can.
+//
+// Identity-aware: the commitment extractor needs the user's first name to
+// detect "<First> to do X" patterns in Notion call notes. Pass `identity`
+// from identity-resolver.mjs (loaded by filter-rank.mjs); defaults to
+// `{ first_name: "Robby" }` for backward compatibility with the original
+// pre-multi-user code path.
 
 // Inlined to keep morning-mvp self-contained. Same parser as apple-mail-mcp's
 // src/utils/dates.ts, covered by tests there. Apple's locale date string
@@ -28,9 +34,11 @@ export function scoreOneThingCandidates({
   basecamp_48h,
   notion,
   vipSet,
+  identity,
 }) {
   const now = Date.now();
   const candidates = [];
+  const firstName = identity?.first_name || identity?.firstName || "Robby";
 
   // Category A: waiting-on-me items, weighted by VIP, urgency, recency.
   for (const m of waiting_on_me ?? []) {
@@ -85,12 +93,12 @@ export function scoreOneThingCandidates({
     });
   }
 
-  // Category D: promises Robby made, surfaced from Notion call note action
-  // items where the action verb has Robby as the subject. We detect this in
+  // Category D: promises the user made, surfaced from Notion call note action
+  // items where the action verb has the user as the subject. We detect this in
   // the Notion `highlight` text via heuristic patterns.
   for (const n of notion ?? []) {
     const text = `${n.title} ${n.highlight ?? ""}`;
-    const myCommitments = extractRobbyCommitments(text);
+    const myCommitments = extractMyCommitments(text, firstName);
     for (const c of myCommitments) {
       candidates.push({
         id: `promise:${n.id}:${c.slice(0, 30)}`,
@@ -108,11 +116,22 @@ export function scoreOneThingCandidates({
   return candidates.slice(0, 10);
 }
 
-// Find sentences/phrases where Robby is the actor.
-function extractRobbyCommitments(text) {
+// Find sentences/phrases where the named user is the actor. Identity-driven:
+// firstName comes from identity-resolver.mjs (~/CLAUDE.md h1).
+//
+// Exported for unit testing; production callers go through
+// scoreOneThingCandidates which threads `identity` to here.
+export function extractMyCommitments(text, firstName = "Robby") {
   if (!text) return [];
   const out = [];
-  const re = /\b(Robby (?:to |and \w+ to |will |is going to )[^.\n;]+)/gi;
+  // Escape the first name for regex inclusion. Almost everyone's first name
+  // is plain word chars, but apostrophes (D'Angelo's son, e.g. "Angelo") and
+  // hyphens (Anne-Marie) are common enough to guard.
+  const safe = firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(
+    `\\b(${safe} (?:to |and \\w+ to |will |is going to )[^.\\n;]+)`,
+    "gi",
+  );
   let m;
   while ((m = re.exec(text))) {
     out.push(m[1].replace(/\s+/g, " ").trim());
