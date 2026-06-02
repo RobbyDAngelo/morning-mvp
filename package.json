@@ -6,10 +6,11 @@
   "type": "module",
   "engines": { "node": ">=20" },
   "scripts": {
-    "test": "node --test --import tsx test/filters.test.mjs test/filters-overrides.test.mjs test/rank.test.mjs test/people.test.mjs test/one-thing.test.mjs test/state.test.mjs test/promises.test.mjs test/decisions.test.mjs test/weekly-arc.test.mjs test/people-facts.test.mjs test/trends.test.mjs test/sync-state.test.mjs test/sync-cli.test.mjs test/enrich-summaries.test.mjs test/save-calendar-events.test.mjs test/os-detect.test.mjs test/save-mail.test.mjs test/save-calendar-events-google.test.mjs test/one-thing-identity.test.mjs test/identity-resolver.test.mjs test/promises-identity.test.mjs test/cross-platform.test.mjs test/cli.test.mjs",
+    "test": "node --test --import tsx test/filters.test.mjs test/filters-overrides.test.mjs test/rank.test.mjs test/people.test.mjs test/one-thing.test.mjs test/state.test.mjs test/promises.test.mjs test/decisions.test.mjs test/weekly-arc.test.mjs test/people-facts.test.mjs test/trends.test.mjs test/sync-state.test.mjs test/sync-cli.test.mjs test/enrich-summaries.test.mjs test/save-calendar-events.test.mjs test/os-detect.test.mjs test/save-mail.test.mjs test/save-calendar-events-google.test.mjs test/one-thing-identity.test.mjs test/identity-resolver.test.mjs test/promises-identity.test.mjs test/cross-platform.test.mjs test/cli.test.mjs test/doctor.test.mjs",
     "resolve-identity": "node scripts/identity-resolver.mjs",
     "test:adversarial": "node --test --import tsx test/adversarial.test.mjs",
     "test:all": "node --test --import tsx 'test/*.test.mjs'",
+    "doctor": "node scripts/doctor.mjs",
     "collect": "node --import tsx scripts/collect-all.mjs",
     "filter-rank": "node scripts/filter-rank.mjs",
     "render": "node scripts/render-print.mjs",

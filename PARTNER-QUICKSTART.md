@@ -95,7 +95,20 @@ node --import tsx scripts/collect-basecamp.mjs --days 7
 ```
 If the token works, you'll see a JSON dump. If not, a 401.
 
-## 5. Run your first brief
+## 5. Check your setup (10 seconds)
+
+Before the first run, let the doctor verify your environment:
+
+```bash
+cd ~/.claude/skills/morning-mvp
+npm run doctor
+```
+
+On Windows: `cd $env:USERPROFILE\.claude\skills\morning-mvp; npm run doctor`
+
+It prints a checklist. Green `✓` means good, `!` is an optional warning, `✗` is a blocker to fix first (it tells you how). It also reminds you which Gmail / Google Calendar plugins to connect inside Claude Code (it cannot check those itself).
+
+## 6. Run your first brief
 
 In any Claude Code session, type:
 
