@@ -10,7 +10,7 @@
 // verify inside Claude. Everything else it checks directly. Always exits 0
 // unless --strict is passed, in which case a hard blocker exits 1.
 
-import { readFile, access, writeFile, unlink } from "node:fs/promises";
+import { readFile, access, writeFile, unlink, mkdir } from "node:fs/promises";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir, platform } from "node:os";
@@ -129,10 +129,13 @@ if (OS === "darwin") {
   else warn("apple-mail-mcp", `missing at ${amRoot}; needed for the apple-mail provider. git clone https://github.com/RobbyDAngelo/apple-mail-mcp.git ${amRoot}`);
 }
 
-// 8. data/ directory writable.
+// 8. data/ directory writable. The dir is gitignored and created on first
+//    run (collect-all does mkdir -p), so a missing data/ on a fresh install
+//    is normal, not a blocker. Create it, then probe a real write.
 const dataDir = join(ROOT, "data");
 const probe = join(dataDir, ".doctor-write-probe");
 try {
+  await mkdir(dataDir, { recursive: true });
   await writeFile(probe, "ok");
   await unlink(probe);
   ok("data/ writable", dataDir);
