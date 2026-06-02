@@ -7,11 +7,11 @@
     "user_agent": "morning-mvp (robby@robbydangelo.com)"
   },
   "filters": {
-    "_comment": "Per-user overrides applied on top of the built-in newsletter rules.",
+    "_comment": "Per-user overrides on top of the built-in newsletter rules. Domains match subdomains too (scaleupmedia.com drops reply.scaleupmedia.com). Allowlist wins over droplist wins over heuristics.",
     "always_include_senders": [],
     "always_drop_senders": [],
     "always_include_domains": [],
-    "always_drop_domains": []
+    "always_drop_domains": ["example-marketing-domain.com"]
   },
   "metrics": [
     {

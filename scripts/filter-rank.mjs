@@ -21,6 +21,7 @@ import { loadTrends, saveTrends, recordSnapshot } from "./trends.mjs";
 import { loadWeekState, mondayOf, decideAction } from "./weekly-arc.mjs";
 import { buildRecapData } from "./recap.mjs";
 import { loadResolvedIdentity } from "./identity-resolver.mjs";
+import { loadConfig } from "./lib/load-config.mjs";
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, arg, i, arr) => {
@@ -32,6 +33,11 @@ if (!args.raw || !args.out) {
   process.stderr.write("usage: filter-rank.mjs --raw raw.json [--notion n.json] [--basecamp b.json] --out out.json\n");
   process.exit(2);
 }
+
+// Per-user filter overrides (always_drop_senders / always_drop_domains /
+// always_include_*) from config.local.json filters block. Empty when
+// unconfigured, so behavior is unchanged on a fresh install.
+const filterOverrides = (await loadConfig())?.filters ?? {};
 
 const rawRoot = JSON.parse(await readFile(args.raw, "utf8"));
 // collect-all wraps mail and basecamp under named keys. Accept both shapes:
@@ -59,7 +65,7 @@ for (const m of inbound) {
 const dropped = [];
 const survivors = [];
 for (const m of deduped) {
-  const verdict = isLikelyNewsletter(m);
+  const verdict = isLikelyNewsletter(m, filterOverrides);
   if (verdict.drop) {
     dropped.push({ message_id: m.message_id, subject: m.subject, sender: m.sender, reasons: verdict.reasons });
     continue;

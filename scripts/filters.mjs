@@ -144,12 +144,60 @@ export function senderDomain(senderRaw) {
   return at >= 0 ? email.slice(at + 1) : "";
 }
 
-export function isLikelyNewsletter(msg) {
+// Exact, case-insensitive email match against a user-supplied list.
+function inSenderList(email, list) {
+  if (!Array.isArray(list) || list.length === 0) return false;
+  const e = email.toLowerCase();
+  return list.some((s) => String(s).trim().toLowerCase() === e);
+}
+
+// Domain match against a user-supplied list. Matches the exact domain OR any
+// subdomain of it: "scaleupmedia.com" matches "reply.scaleupmedia.com" too.
+// A leading "@" on a list entry is tolerated.
+function inDomainList(domain, list) {
+  if (!Array.isArray(list) || list.length === 0) return false;
+  const d = domain.toLowerCase();
+  return list.some((raw) => {
+    const dd = String(raw).trim().toLowerCase().replace(/^@/, "");
+    if (!dd) return false;
+    return d === dd || d.endsWith("." + dd);
+  });
+}
+
+export function isLikelyNewsletter(msg, overrides = {}) {
   const reasons = [];
   const sender = msg.sender ?? msg.from ?? "";
   const subject = msg.subject ?? "";
   const email = senderEmail(sender);
   const domain = senderDomain(sender);
+
+  const {
+    always_include_senders = [],
+    always_include_domains = [],
+    always_drop_senders = [],
+    always_drop_domains = [],
+  } = overrides ?? {};
+
+  // User allowlist wins over everything. Never drop a sender the user has
+  // explicitly always-included, even if the heuristics would flag it.
+  if (
+    inSenderList(email, always_include_senders) ||
+    inDomainList(domain, always_include_domains)
+  ) {
+    return { drop: false, reasons: ["user_allowlist"], borderline: false };
+  }
+
+  // User droplist. Force-drop a sender or domain the user marked as noise.
+  // This is the F-4 mitigation from SECURITY-REVIEW.md: marketing senders
+  // with a personal display name (e.g. "Dan Martell <dm@danmartell.com>")
+  // bypass the heuristics below, so the user names them explicitly in
+  // config.local.json filters.always_drop_senders / always_drop_domains.
+  if (inSenderList(email, always_drop_senders)) {
+    return { drop: true, reasons: [`user_drop_sender:${email}`], borderline: false };
+  }
+  if (inDomainList(domain, always_drop_domains)) {
+    return { drop: true, reasons: [`user_drop_domain:${domain}`], borderline: false };
+  }
 
   if (NOREPLY_SENDER_RE.test(email)) reasons.push(`sender_pattern:${email}`);
   if (DOMAIN_BLOCKLIST.has(domain)) reasons.push(`domain_blocked:${domain}`);
