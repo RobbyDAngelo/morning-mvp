@@ -230,7 +230,7 @@ Optional integer: window in days. Default 7. If Robby says "morning brief 14" th
 
 8. **Generate the brief.** Write `~/morning-brief/<YYYY-MM-DD>.md` with the format below. Do not pad. Empty sections render as "(none)".
 
-9. **Enforce writing rules.** Run the enforcer over the markdown. It auto-rewrites em dashes (to commas) and "brother" diction, and exits 2 if it finds a violation that needs manual rewrite (contract framing, EOS/Intrapreneurship, D&I references). If exit 2, fix and re-run before rendering.
+9. **Enforce writing rules.** Run the enforcer over the markdown. It always auto-rewrites every em-dash variant to a comma (universal). Brand-specific rules (rewrite "brother", flag contract framing / EOS / D&I) are OFF by default and only run when enabled per user via `--brand` or `config.local.json` `writing.*` flags; when enabled and a flagged term needs manual rewrite, it exits 2 (fix and re-run before rendering).
 
    ```bash
    node <skill-root>/scripts/enforce-rules.mjs ~/morning-brief/<YYYY-MM-DD>.md
@@ -387,22 +387,24 @@ Source: morning-mvp v1 · `~/.claude/skills/morning-mvp/`
 - **If filter-rank classifies everything as NOISE** (zero survivors): render `(quiet day, nothing requires action)` under each empty section. Do not pad with fake items.
 - **If output would require speculation about what someone wants**: keep their subject line and a quote from the body. Do not invent intent.
 
-## Writing rule enforcement (FINAL PASS, MANDATORY)
+## Writing rule enforcement (FINAL PASS)
 
-Before saving the brief, scan it and rewrite any sentence that contains any of these. Triple-anchored.
+Before saving the brief, apply the UNIVERSAL rules (every user) and any BRAND rules the user opted into.
 
 ```
-BLACKLIST
-- em dashes (— or –) → replace with comma, colon, period, or restructure
+UNIVERSAL (always)
+- em dashes (any variant) → replace with comma, colon, period, or restructure
+- AI filler ("I'd be happy to", "Let me know if...", "Here's the rewrite") → cut entirely
+- apply every rule the user wrote in ranked.identity.hard_rules
+
+BRAND (only if the user enabled them via config.local.json writing.* or --brand)
 - "isn't just" / "is more than" / "not just X but Y" framing → use direct affirmative
 - "brother" → use "man", "gents", "my man"
-- "EOS", "Intrapreneurship", "Entrepreneurial Operating System" → use "UNDENIABLE Human Capital Framework" or omit
+- "EOS", "Intrapreneurship", "Entrepreneurial Operating System" → omit or the user's preferred term
 - "Diversity and Inclusion", "DEI", "D&I" → omit
-- "NIV", "MSG" Scripture refs (unless explicitly requested) → use NLT, CSB, or ESV
-- AI filler ("I'd be happy to", "Let me know if...", "Here's the rewrite") → cut entirely
 ```
 
-This blacklist is enforced as binary check R6.
+`enforce-rules.mjs` runs the universal em-dash pass for everyone and the brand rules only when enabled. The universal rules map to binary check R8.
 
 ## Additional resources
 

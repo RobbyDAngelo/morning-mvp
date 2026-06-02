@@ -13,6 +13,13 @@
     "always_include_domains": [],
     "always_drop_domains": ["example-marketing-domain.com"]
   },
+  "writing": {
+    "_comment": "Extra brief writing rules beyond the universal no-em-dash pass (which is always on). All OFF by default. Enable only the brand-voice rules you want.",
+    "no_brother": false,
+    "no_contract_framing": false,
+    "no_eos": false,
+    "no_di": false
+  },
   "metrics": [
     {
       "_comment": "Custom external metrics. Each command should print a single value to stdout. Render as a blockquote at the top of the brief. Default metrics (Basecamp open todos) ship with no config.",

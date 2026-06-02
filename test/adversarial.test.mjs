@@ -206,29 +206,49 @@ test("ADV-E1: enforcer catches every Unicode dash variant", async () => {
   }
 });
 
-test("ADV-E2: enforcer catches 'brother' but allows 'Big Brother' (case-only collapse)", async () => {
+test("ADV-E2: enforcer catches 'brother' under --brand but allows 'Big Brother' (case-only collapse)", async () => {
   const dir = await mkdtemp(join(tmpdir(), "adv-"));
   const briefPath = join(dir, "brief.md");
   await writeFile(briefPath, "Hey brother.\nBig Brother is watching.\n");
-  await runScript("enforce-rules.mjs", [briefPath]);
+  // Brand rules are off by default now; pass --brand to exercise the rewrite.
+  await runScript("enforce-rules.mjs", [briefPath, "--brand"]);
   const after = await readFile(briefPath, "utf8");
   await rm(dir, { recursive: true, force: true });
-  // The regex is /\bbrother(s)?\b/gi, so case-insensitive. Both get caught.
-  // That's correct behavior; "Big Brother" the proper noun is also rewritten,
-  // which is an acceptable false positive.
   assert.match(after, /\bman\b/);
   assert.doesNotMatch(after, /\bbrother\b/i);
 });
 
-test("ADV-E3: enforcer detects EOS terms as a flag, not auto-rewrite", async () => {
+test("ADV-E2b: 'brother' is LEFT ALONE by default (no --brand), the multi-user safe default", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "adv-"));
+  const briefPath = join(dir, "brief.md");
+  await writeFile(briefPath, "Call my brother back today.\n");
+  const r = await runScript("enforce-rules.mjs", [briefPath]);
+  const after = await readFile(briefPath, "utf8");
+  await rm(dir, { recursive: true, force: true });
+  // Default install must not mangle a legitimate "brother".
+  assert.match(after, /\bbrother\b/);
+  assert.equal(r.code, 0);
+});
+
+test("ADV-E3: enforcer flags EOS terms under --brand (exit 2)", async () => {
   const dir = await mkdtemp(join(tmpdir(), "adv-"));
   const briefPath = join(dir, "brief.md");
   await writeFile(briefPath, "We run on EOS. Intrapreneurship is core.\n");
-  const r = await runScript("enforce-rules.mjs", [briefPath]);
+  const r = await runScript("enforce-rules.mjs", [briefPath, "--brand"]);
   await rm(dir, { recursive: true, force: true });
   // Should exit 2 (manual rewrite required) because eos_language is flagged.
   assert.equal(r.code, 2);
   assert.match(r.stderr, /eos_language/);
+});
+
+test("ADV-E3b: a brief that mentions EOS is NOT blocked by default (no --brand)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "adv-"));
+  const briefPath = join(dir, "brief.md");
+  await writeFile(briefPath, "Reminder: send the EOS quarterly rocks to the team.\n");
+  const r = await runScript("enforce-rules.mjs", [briefPath]);
+  await rm(dir, { recursive: true, force: true });
+  // Default install must not reject a brief just because it says EOS.
+  assert.equal(r.code, 0);
 });
 
 // ============================================================================

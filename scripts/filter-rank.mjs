@@ -135,6 +135,15 @@ const people_view = buildPeopleView({
 // stamped onto the ranked output so SKILL.md's LLM step can compose drafts
 // in the right voice.
 const identity = await loadResolvedIdentity();
+if (!identity.first_name) {
+  // Name-anchored commitment extraction ("<First> to do X" in Notion notes)
+  // needs the user's first name. Surface it instead of silently defaulting.
+  process.stderr.write(
+    "[filter-rank] no first_name in identity.local.json; promise extraction from " +
+      "Notion notes will be limited. Run `node scripts/identity-resolver.mjs` " +
+      "after setting your name in CLAUDE.md.\n",
+  );
+}
 
 const one_thing_candidates = scoreOneThingCandidates({
   rankedMessages: ranked,
