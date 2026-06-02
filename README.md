@@ -1,5 +1,7 @@
 # morning-mvp
 
+[![CI](https://github.com/RobbyDAngelo/morning-mvp/actions/workflows/ci.yml/badge.svg)](https://github.com/RobbyDAngelo/morning-mvp/actions/workflows/ci.yml)
+
 One printable page each morning. Who is waiting on you. What is due in the next 48 hours. Nothing else.
 
 Built as a Claude Code skill. Works on macOS and Windows. Pulls from your mail, calendar, Notion call notes, and Basecamp todos; filters noise, ranks by urgency and relationship; writes a printable HTML one-pager and opens it in your browser.
