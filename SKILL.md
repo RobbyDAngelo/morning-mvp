@@ -73,6 +73,8 @@ Optional integer: window in days. Default 7. If Robby says "morning brief 14" th
    `orderBy: "startTime"`. Probe each candidate tool name in order;
    first that resolves is the right one.
 
+   **If none of the candidate Google Calendar MCP tools are connected in this session** (first run, plugin not installed yet): do NOT fail the whole brief. Leave `raw.calendar.events` empty and render the meetings section as `Calendar unavailable: connect a Google Calendar MCP plugin in Claude Code, then re-run. See PARTNER-QUICKSTART.md.` Continue with the rest of the brief.
+
    In either path, save the events back into the raw JSON:
 
    ```bash
@@ -98,6 +100,7 @@ Optional integer: window in days. Default 7. If Robby says "morning brief 14" th
 
    - `save-mail.mjs` accepts raw Gmail API shape (with `payload.headers`), pre-flattened Pipedream shape, and bare arrays. It dedupes by `message_id` across multiple invocations so multi-account merges are safe.
    - On macOS with the `apple-mail` provider, this step is skipped (the data is already in `raw.mail`).
+   - **If none of the candidate Gmail MCP tools are connected in this session** (first run, plugin not installed or not authenticated yet): do NOT fail the brief. Tell the user plainly at the top of the brief: `Mail unavailable: connect and authenticate a Gmail MCP plugin in Claude Code, then re-run. See PARTNER-QUICKSTART.md.` Then build the brief from whatever other sources DID return data (Notion, Basecamp, calendar). A partial brief with a clear fix-it line beats a silent empty page.
 
 3. **Pull Notion call notes for the window.** Call the Notion MCP search with these parameters:
    - Use `mcp__98a61912-ab1e-47b5-8c60-d7f46d1e3a0e__notion-search`
@@ -105,15 +108,15 @@ Optional integer: window in days. Default 7. If Robby says "morning brief 14" th
    - Filter results to the last `<window>` days by `last_edited_time`
    - Capture: title, URL, last_edited_time, key bullets if visible in snippets
 
-   Write Notion results to `~/.claude/skills/morning-mvp/data/notion-<YYYY-MM-DD>.json`.
+   Write Notion results to `<skill-root>/data/notion-<YYYY-MM-DD>.json`.
 
 4. **Filter and rank.** Run:
 
    ```bash
-   node ~/.claude/skills/morning-mvp/scripts/filter-rank.mjs \
-     --raw  ~/.claude/skills/morning-mvp/data/raw-<YYYY-MM-DD>.json \
-     --notion ~/.claude/skills/morning-mvp/data/notion-<YYYY-MM-DD>.json \
-     --out  ~/.claude/skills/morning-mvp/data/ranked-<YYYY-MM-DD>.json
+   node <skill-root>/scripts/filter-rank.mjs \
+     --raw  <skill-root>/data/raw-<YYYY-MM-DD>.json \
+     --notion <skill-root>/data/notion-<YYYY-MM-DD>.json \
+     --out  <skill-root>/data/ranked-<YYYY-MM-DD>.json
    ```
 
    The script applies:
@@ -124,36 +127,39 @@ Optional integer: window in days. Default 7. If Robby says "morning brief 14" th
 5. **Enrich the draft targets with full bodies.** Run:
 
    ```bash
-   node --import tsx ~/.claude/skills/morning-mvp/scripts/enrich-drafts.mjs \
-     --ranked ~/.claude/skills/morning-mvp/data/ranked-<YYYY-MM-DD>.json \
+   node --import tsx <skill-root>/scripts/enrich-drafts.mjs \
+     --ranked <skill-root>/data/ranked-<YYYY-MM-DD>.json \
      --body-limit 2500
    ```
 
-   This calls `apple-mail-mcp`'s `getMessage` for each of the top 3 `draft_reply_targets` and writes back the full body, recipients, and date headers so the next step can draft replies in voice.
+   On macOS (apple-mail provider) this calls `apple-mail-mcp`'s `getMessage` for each of the top 3 `draft_reply_targets` and writes back the full body, recipients, and date headers so step 7 can draft replies with real context.
+
+   **On Windows / Linux (gmail provider)** the script detects that apple-mail-mcp is not available and exits cleanly with `{skipped: true}` (it does NOT crash). The draft-target bodies are instead fetched by you via the mail MCP: for each of the up to 3 entries in `ranked.draft_reply_targets`, call the Gmail MCP get-or-read-message tool with that entry's `message_id`, and use the returned body as the draft context in step 7. The targets always carry `message_id`, `sender`, and `subject`, so you know exactly what to fetch.
 
 5b. **Enrich every other unreplied item with a body preview.** Run:
 
    ```bash
-   node --import tsx ~/.claude/skills/morning-mvp/scripts/enrich-summaries.mjs \
-     --ranked ~/.claude/skills/morning-mvp/data/ranked-<YYYY-MM-DD>.json \
+   node --import tsx <skill-root>/scripts/enrich-summaries.mjs \
+     --ranked <skill-root>/data/ranked-<YYYY-MM-DD>.json \
      --max 15 --body-limit 600 --concurrency 4 --budget-ms 90000
    ```
 
-   This pulls a ~600 character body preview for the top 15 unreplied messages in parallel (4 concurrent osascripts). A 90-second wall-clock budget caps the total enrichment time so Mail.app slowness can never block the brief by more than 90s. Items not fetched in time render with subject-only fallback summaries. It attaches `body_preview` to each message in `waiting_on_me`, `decisions_waiting`, `responses_waiting`, and to each `people_view[].mail.unreplied[]`. These previews are what makes step 7c (summaries) possible. If Mail.app is wedged after a recent heavy query, expect 3-5 out of 15 to enrich in the budget window; the rest fall back gracefully.
+   On macOS this pulls a ~600 character body preview for the top 15 unreplied messages in parallel (4 concurrent osascripts), capped by a 90-second wall-clock budget so Mail.app slowness can never block the brief by more than 90s.
 
-6. **Pick The One Thing.** Read `ranked-<YYYY-MM-DD>.json`. Look only at `one_thing_candidates` (top 10 pre-scored across waiting, deadlines, and promises Robby made). Select **exactly one** that has the highest expected impact on the day. Tiebreakers, in order: (a) someone is blocked on Robby specifically; (b) the deadline is inside 48 hours; (c) the relationship is high-value (Brian Toelle, Dave/Michelle Barrett, Ellie, key clients); (d) the item has been waiting longest. State the pick in one sentence: "Today's One Thing is X because Y." This becomes the first H1 of the brief.
+   **On Windows / Linux (gmail provider)** the script seeds `body_preview` directly from the `snippet` the Gmail MCP already wrote onto each message in step 2b, instantly and with no extra fetch. Either way it attaches `body_preview` to each message in `waiting_on_me`, `decisions_waiting`, `responses_waiting`, and to each `people_view[].mail.unreplied[]`. These previews are what makes step 7c (summaries) possible. Items with no snippet fall back to subject-only summaries.
 
-7. **Draft 3 replies in Robby's voice.** For each enriched `draft_reply_targets[i]`:
-   - Read the full thread body. Identify the asker's actual question or open loop.
+6. **Pick The One Thing.** Read `ranked-<YYYY-MM-DD>.json`. Look only at `one_thing_candidates` (top 10 pre-scored across waiting, deadlines, and promises the user made). Select **exactly one** that has the highest expected impact on the day. Tiebreakers, in order: (a) someone is blocked on the user specifically; (b) the deadline is inside 48 hours; (c) the relationship is high-value (anyone flagged VIP in `people_view`, plus key clients the user corresponds with most); (d) the item has been waiting longest. State the pick in one sentence: "Today's One Thing is X because Y." This becomes the first H1 of the brief.
+
+7. **Draft 3 replies in the user's voice.** The user's identity is in `ranked.identity` (name, first_name, email, role, signoff, persona_hints), resolved from their `CLAUDE.md`. Draft as that person. For each `draft_reply_targets[i]`:
+   - Get the full thread body. On macOS it is already on the target (`body`, from step 5). On Windows / Linux, fetch it via the mail MCP using the target's `message_id` (see step 5). Identify the asker's actual question or open loop.
    - Compose a 3-to-5 sentence reply that answers or moves it forward.
-   - Voice rules (TRIPLE ANCHORED, enforced again by `enforce-rules.mjs`):
+   - Voice rules (enforced again by `enforce-rules.mjs`):
      - No em dashes. Use commas, colons, or restructure.
      - No "isn't just X" / "is more than X" framing.
-     - No "brother" diction.
-     - No EOS / Intrapreneurship / D&I terms.
      - Direct, concise, no hedging, no AI filler ("I'd be happy to", "Let me know if").
-     - Optional canonical signoff (Tetelestai block) only if the original is a formal external thread.
-   - Each draft goes in its own fenced markdown block under `## Drafted replies (ready to copy-paste)`. Label each block with the recipient and subject so Robby knows which is which.
+     - Apply every rule in `ranked.identity.hard_rules` (the user's own writing rules from their CLAUDE.md). For Robby's install these include no "brother" diction and no EOS / Intrapreneurship / D&I terms; other users have their own.
+     - Sign off only if `ranked.identity.signoff` is set; use that block verbatim, and only on formal external threads. If no signoff is configured, end with the reply body and no signature.
+   - Each draft goes in its own fenced markdown block under `## Drafted replies (ready to copy-paste)`. Label each block with the recipient and subject so the user knows which is which.
 
 7b. **Tier 2: write per-meeting cards from calendar data.** Read `raw-<DATE>.json` → `calendar.events`. For each event in the next 36 hours that is NOT all-day and NOT declined:
    - Card header: `### <Time>, <Title>` (use Apple's locale start-date as is).
@@ -227,14 +233,14 @@ Optional integer: window in days. Default 7. If Robby says "morning brief 14" th
 9. **Enforce writing rules.** Run the enforcer over the markdown. It auto-rewrites em dashes (to commas) and "brother" diction, and exits 2 if it finds a violation that needs manual rewrite (contract framing, EOS/Intrapreneurship, D&I references). If exit 2, fix and re-run before rendering.
 
    ```bash
-   node ~/.claude/skills/morning-mvp/scripts/enforce-rules.mjs ~/morning-brief/<YYYY-MM-DD>.md
+   node <skill-root>/scripts/enforce-rules.mjs ~/morning-brief/<YYYY-MM-DD>.md
    ```
 
 10. **Tier 5: sync and share.** After the brief is finalized and enforced, run the sync orchestrator:
 
     ```bash
-    node ~/.claude/skills/morning-mvp/scripts/push-all.mjs \
-      --ranked ~/.claude/skills/morning-mvp/data/ranked-<YYYY-MM-DD>.json \
+    node <skill-root>/scripts/push-all.mjs \
+      --ranked <skill-root>/data/ranked-<YYYY-MM-DD>.json \
       --brief ~/morning-brief/<YYYY-MM-DD>.md
     ```
 
@@ -242,7 +248,7 @@ Optional integer: window in days. Default 7. If Robby says "morning brief 14" th
     - **calendar (PREFERRED via Fantastical)**: instead of running `push-calendar.mjs`, call `mcp__Fantastical__createCalendarItem` with a natural-language `description` like `"Deep work: <One Thing> tomorrow 6am for 90 minutes"`. Pick the right `calendarId` from `mcp__Fantastical__queryCalendars` (Robby's preferred default is the `robby@narrowgate.group` calendar for business deep-work, `robby@robbydangelo.com` for personal). After it returns, run:
 
        ```bash
-       node ~/.claude/skills/morning-mvp/scripts/record-calendar-event.mjs \
+       node <skill-root>/scripts/record-calendar-event.mjs \
          --date <YYYY-MM-DD> --title "Deep work: ..." --event-id <ID> \
          --calendar <calendar_id> --start <ISO> --end <ISO>
        ```
@@ -252,31 +258,31 @@ Optional integer: window in days. Default 7. If Robby says "morning brief 14" th
     - **notion**: prints a payload with markdown body + properties. The script does NOT call Notion. Claude in this workflow then calls `mcp__98a61912-...-notion-create-pages` with the payload's `parent`, `title`, `properties`, and `content` (markdown). After Claude gets back the page id and URL, run:
 
        ```bash
-       node ~/.claude/skills/morning-mvp/scripts/record-sync.mjs \
+       node <skill-root>/scripts/record-sync.mjs \
          --date <YYYY-MM-DD> --kind notion --page-id <ID> --url <URL>
        ```
 
     All three are idempotent within a day. To roll back any day's pushes:
 
     ```bash
-    node ~/.claude/skills/morning-mvp/scripts/unsync.mjs --date <YYYY-MM-DD>
+    node <skill-root>/scripts/unsync.mjs --date <YYYY-MM-DD>
     ```
 
 11. **Render to print HTML and open.** Run:
 
     ```bash
-    node ~/.claude/skills/morning-mvp/scripts/render-print.mjs ~/morning-brief/<YYYY-MM-DD>.md
+    node <skill-root>/scripts/render-print.mjs ~/morning-brief/<YYYY-MM-DD>.md
     ```
 
-    The script writes `~/morning-brief/<YYYY-MM-DD>.html` with embedded print CSS (US Letter, 0.5in margins, 11pt body, 14pt headers, no color requirement) and opens it in the default browser. Robby presses `Cmd+P` from there.
+    The script writes `~/morning-brief/<YYYY-MM-DD>.html` with embedded print CSS (US Letter, 0.5in margins, 11pt body, 14pt headers, no color requirement) and opens it in the default browser (cross-platform: `open` on macOS, `start` via cmd on Windows, `xdg-open` on Linux). If the browser cannot be launched, the script prints the HTML path so the user can open it manually. The user presses `Cmd+P` (macOS) or `Ctrl+P` (Windows) from there.
 
-12. **Clean up the calendar apps.** After the brief is on screen in the browser, neither Calendar.app nor Fantastical needs to remain running. Quit them:
+12. **Clean up the calendar apps (macOS only).** After the brief is on screen, neither Calendar.app nor Fantastical needs to remain running. Quit them:
 
     ```bash
-    node ~/.claude/skills/morning-mvp/scripts/cleanup-apps.mjs
+    node <skill-root>/scripts/cleanup-apps.mjs
     ```
 
-    Idempotent: quitting an already-closed app is a no-op. Failures are logged to stderr and swallowed so cleanup never blocks the brief (the brief is already rendered by this point). The Fantastical MCP server (separate process) keeps running so tomorrow's brief can query it immediately.
+    On Windows / Linux there are no such apps, so the script is a clean no-op (`{skipped: true}`) and the workflow is complete after step 11. On macOS it is idempotent: quitting an already-closed app is a no-op, and failures are logged to stderr and swallowed so cleanup never blocks the brief. The Fantastical MCP server (separate process) keeps running so tomorrow's brief can query it immediately.
 
 ## Output requirements
 

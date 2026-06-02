@@ -5,7 +5,10 @@
 
 import { platform } from "node:os";
 
-export const OS = platform(); // "darwin" | "win32" | "linux" | etc.
+// MORNING_MVP_PLATFORM overrides the detected platform. Production never sets
+// it; it exists so the Windows / Linux provider path can be exercised on a
+// macOS box (tests, and remote support of a Windows user).
+export const OS = process.env.MORNING_MVP_PLATFORM || platform(); // "darwin" | "win32" | "linux"
 export const IS_MAC = OS === "darwin";
 export const IS_WIN = OS === "win32";
 export const IS_LINUX = OS === "linux";

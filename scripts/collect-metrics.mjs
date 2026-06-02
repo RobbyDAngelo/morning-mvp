@@ -43,13 +43,21 @@ async function loadConfig() {
 
 function runShell(cmd, timeoutMs = 60_000) {
   return new Promise((resolveP) => {
-    const child = spawn("/bin/sh", ["-c", cmd], { stdio: ["ignore", "pipe", "pipe"] });
+    // Use the platform's shell so pipes / redirects work on each OS.
+    const [shell, shellArgs] =
+      process.platform === "win32" ? ["cmd", ["/c", cmd]] : ["/bin/sh", ["-c", cmd]];
+    const child = spawn(shell, shellArgs, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
       resolveP({ code: 124, stdout, stderr: stderr + `\n(timed out after ${timeoutMs}ms)` });
     }, timeoutMs);
+    // A missing shell emits 'error' (not 'close'); handle it so we never throw.
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      resolveP({ code: 127, stdout: "", stderr: err.message });
+    });
     child.stdout.on("data", (c) => (stdout += c.toString("utf8")));
     child.stderr.on("data", (c) => (stderr += c.toString("utf8")));
     child.on("close", (code) => {
@@ -67,16 +75,23 @@ const metricDefs = cfg?.metrics ?? [];
 // where the "headline_metrics" come from). Keep these CHEAP and ALWAYS
 // AVAILABLE: anything that scans all of Mail.app is too slow for a default
 // and lives in headline_metrics instead.
-const DEFAULTS = [
-  {
-    // Basecamp assigned-to-me todo count. Reuses the collect-basecamp.mjs
-    // output and counts only `app_url` entries (one per todo) rather than
-    // `id` keys (which appear at many nesting levels).
-    label: "Basecamp open todos",
-    command: `node ${SKILL_ROOT}/scripts/collect-basecamp.mjs 2>/dev/null | grep -c '"app_url":' || echo 0`,
-    format: "${value} Basecamp todos assigned to you",
-  },
-];
+// The default metric uses a POSIX pipe (grep, echo) and only runs when the
+// user has not defined their own metrics. It is skipped on Windows, where
+// that shell syntax is not available; the headline_metrics derived from
+// ranked.json still cover the important counts there.
+const DEFAULTS =
+  process.platform === "win32"
+    ? []
+    : [
+        {
+          // Basecamp assigned-to-me todo count. Reuses the collect-basecamp.mjs
+          // output and counts only `app_url` entries (one per todo) rather than
+          // `id` keys (which appear at many nesting levels).
+          label: "Basecamp open todos",
+          command: `node ${SKILL_ROOT}/scripts/collect-basecamp.mjs 2>/dev/null | grep -c '"app_url":' || echo 0`,
+          format: "${value} Basecamp todos assigned to you",
+        },
+      ];
 
 const metrics = metricDefs.length > 0 ? metricDefs : DEFAULTS;
 const results = [];

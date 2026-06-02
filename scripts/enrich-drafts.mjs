@@ -7,11 +7,12 @@
 // with body-enriched entries plus a prior_thread excerpt where possible.
 
 import { readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 
-const APPLE_MAIL_ROOT = resolve(homedir(), "apple-mail-mcp");
+const APPLE_MAIL_ROOT = process.env.APPLE_MAIL_MCP_ROOT ?? resolve(homedir(), "apple-mail-mcp");
 process.env.APPLE_MAIL_MCP_TIMEOUT_MS = process.env.APPLE_MAIL_MCP_TIMEOUT_MS ?? "60000";
 
 const args = Object.fromEntries(
@@ -25,6 +26,31 @@ if (!args.ranked) {
   process.exit(2);
 }
 const bodyLimit = Math.max(500, Math.min(Number(args["body-limit"] ?? 2500), 20000));
+
+// The apple-mail bridge is macOS-only. On Windows/Linux (Gmail provider) full
+// draft bodies are fetched by Claude via the mail MCP in the workflow
+// (SKILL.md step 5). Skip gracefully here so the brief never breaks. The
+// draft targets keep their message_id/sender/subject so the workflow knows
+// exactly what to fetch. Set MORNING_MVP_NO_APPLE_MAIL=1 to force this path.
+const APPLE_MAIL_AVAILABLE =
+  process.platform === "darwin" &&
+  existsSync(APPLE_MAIL_ROOT) &&
+  process.env.MORNING_MVP_NO_APPLE_MAIL !== "1";
+if (!APPLE_MAIL_AVAILABLE) {
+  process.stderr.write(
+    `[enrich-drafts] apple-mail-mcp not in use (platform=${process.platform}); ` +
+      `skipping. Fetch draft-target bodies via the mail MCP in the workflow.\n`,
+  );
+  process.stdout.write(
+    JSON.stringify({
+      skipped: true,
+      reason: "apple-mail-mcp unavailable",
+      platform: process.platform,
+      fetch_via: "mail MCP per SKILL.md step 5 (Windows/Gmail path)",
+    }) + "\n",
+  );
+  process.exit(0);
+}
 
 const { getMessage } = await import(`${APPLE_MAIL_ROOT}/src/mail/messages.ts`);
 

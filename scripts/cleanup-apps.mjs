@@ -28,6 +28,12 @@ function quitApp(appName) {
       child.kill("SIGKILL");
       resolveP({ ok: false, app: appName, error: `timeout after ${TIMEOUT_MS}ms` });
     }, TIMEOUT_MS);
+    // Missing binary (e.g. osascript on Windows) emits 'error', not 'close'.
+    // Without this handler Node throws an uncaught exception and crashes.
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      resolveP({ ok: false, app: appName, error: err.message });
+    });
     child.stderr.on("data", (c) => (stderr += c.toString("utf8")));
     child.on("close", (code) => {
       clearTimeout(timer);
@@ -47,6 +53,18 @@ const dryRun = args["dry-run"] !== undefined && args["dry-run"] !== "false";
 const only = args.only;
 
 const APPS = only ? [only] : ["Calendar", "Fantastical"];
+
+// Calendar.app and Fantastical only exist on macOS. On Windows/Linux there is
+// nothing to quit, so this is a clean no-op (the brief is already rendered).
+// MORNING_MVP_PLATFORM overrides the detected platform (used by tests).
+const PLATFORM = process.env.MORNING_MVP_PLATFORM || process.platform;
+if (PLATFORM !== "darwin") {
+  process.stderr.write(
+    `[cleanup-apps] platform=${PLATFORM}, no macOS calendar apps to quit. Skipping.\n`,
+  );
+  process.stdout.write(JSON.stringify({ skipped: true, platform: PLATFORM }) + "\n");
+  process.exit(0);
+}
 
 if (dryRun) {
   process.stdout.write(
