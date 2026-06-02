@@ -13,6 +13,7 @@
 //   cleanup-apps.mjs --only Calendar # quit one specific app
 
 import { spawn } from "node:child_process";
+import { parseArgs, flagEnabled } from "./lib/cli.mjs";
 
 const TIMEOUT_MS = 8_000;
 
@@ -43,14 +44,9 @@ function quitApp(appName) {
   });
 }
 
-const args = Object.fromEntries(
-  process.argv.slice(2).reduce((acc, arg, i, arr) => {
-    if (arg.startsWith("--")) acc.push([arg.replace(/^--/, ""), arr[i + 1]]);
-    return acc;
-  }, []),
-);
-const dryRun = args["dry-run"] !== undefined && args["dry-run"] !== "false";
-const only = args.only;
+const args = parseArgs();
+const dryRun = flagEnabled(args["dry-run"]);
+const only = typeof args.only === "string" ? args.only : undefined;
 
 const APPS = only ? [only] : ["Calendar", "Fantastical"];
 

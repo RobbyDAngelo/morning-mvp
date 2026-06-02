@@ -17,7 +17,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { openExternal } from "./lib/cli.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = resolve(__dirname, "..", "config.local.json");
@@ -27,8 +27,10 @@ const rl = createInterface({ input, output });
 const ask = (q) => rl.question(q);
 
 function openUrl(url) {
-  const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-  spawn(opener, [url], { detached: true, stdio: "ignore" }).unref();
+  // Cross-platform, never crashes the wizard if no browser launcher exists.
+  openExternal(url, {
+    onError: () => process.stderr.write(`(could not auto-open; open this URL yourself: ${url})\n`),
+  });
 }
 
 console.log("");

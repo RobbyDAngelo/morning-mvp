@@ -8,8 +8,8 @@
 // emailed to a phone. No external font, no CDN.
 
 import { readFile, writeFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
 import { resolve, basename } from "node:path";
+import { openExternal } from "./lib/cli.mjs";
 
 const input = process.argv[2];
 if (!input) {
@@ -160,35 +160,14 @@ ${body}
 const outPath = input.replace(/\.md$/, ".html");
 await writeFile(outPath, html);
 
-// Open in the default browser. Each OS has a different launcher:
-//   macOS  -> `open <file>`
-//   Windows-> `cmd /c start "" <file>`  (start is a cmd builtin, not an exe,
-//             so spawn("start", ...) fails with ENOENT; it must go through cmd.
-//             The empty "" is start's title arg, required when the path is
-//             quoted.)
-//   Linux  -> `xdg-open <file>`
-// MORNING_MVP_PLATFORM overrides the detected platform (used by tests).
-const PLATFORM = process.env.MORNING_MVP_PLATFORM || process.platform;
-let openerCmd;
-let openerArgs;
-if (PLATFORM === "darwin") {
-  openerCmd = "open";
-  openerArgs = [outPath];
-} else if (PLATFORM === "win32") {
-  openerCmd = "cmd";
-  openerArgs = ["/c", "start", "", outPath];
-} else {
-  openerCmd = "xdg-open";
-  openerArgs = [outPath];
-}
-const child = spawn(openerCmd, openerArgs, { detached: true, stdio: "ignore" });
-// If the launcher is missing or fails, do not crash. The HTML is already
-// written; tell the user where it is so they can open it manually.
-child.on("error", (err) => {
-  process.stderr.write(
-    `[render-print] could not auto-open the browser (${err.message}). ` +
-      `Open this file manually: ${outPath}\n`,
-  );
+// Open in the default browser (cross-platform via lib/cli.mjs, never crashes
+// if no launcher exists). The HTML is already written; on failure we tell the
+// user the path so they can open it manually.
+openExternal(outPath, {
+  onError: (err) =>
+    process.stderr.write(
+      `[render-print] could not auto-open the browser (${err.message}). ` +
+        `Open this file manually: ${outPath}\n`,
+    ),
 });
-child.unref();
 process.stdout.write(`${outPath}\n`);

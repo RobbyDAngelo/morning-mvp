@@ -18,9 +18,11 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { loadSync, saveSync, recordReminder, getDay } from "./sync-state.mjs";
+import { parseArgs, flagEnabled } from "./lib/cli.mjs";
 
 const TIMEOUT_MS = 60_000;
 const DEFAULT_LIST = "Morning MVP";
+const IS_MAC = (process.env.MORNING_MVP_PLATFORM || process.platform) === "darwin";
 
 function runAppleScript(script) {
   return new Promise((resolveP, reject) => {
@@ -31,6 +33,10 @@ function runAppleScript(script) {
       child.kill("SIGKILL");
       reject(new Error(`Reminders osascript timed out after ${TIMEOUT_MS}ms`));
     }, TIMEOUT_MS);
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
     child.stdout.on("data", (c) => (stdout += c.toString("utf8")));
     child.stderr.on("data", (c) => (stderr += c.toString("utf8")));
     child.on("close", (code) => {
@@ -47,23 +53,32 @@ function asString(s) {
   return '"' + String(s ?? "").replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
 }
 
-const args = Object.fromEntries(
-  process.argv.slice(2).reduce((acc, arg, i, arr) => {
-    if (arg.startsWith("--")) acc.push([arg.replace(/^--/, ""), arr[i + 1]]);
-    return acc;
-  }, []),
-);
+const args = parseArgs();
 
 if (!args.ranked) {
   process.stderr.write("usage: push-reminders.mjs --ranked path/to/ranked.json [--list NAME] [--dry-run]\n");
   process.exit(2);
 }
 
-const dryRun = args["dry-run"] !== undefined && args["dry-run"] !== "false";
+const dryRun = flagEnabled(args["dry-run"]);
 const listName = args.list ?? DEFAULT_LIST;
 const today = new Date().toISOString().slice(0, 10);
 
-const ranked = JSON.parse(await readFile(args.ranked, "utf8"));
+// Apple Reminders push is macOS-only (osascript). Skip cleanly elsewhere.
+if (!IS_MAC && !dryRun) {
+  process.stdout.write(
+    JSON.stringify({ skipped: true, reason: "Apple Reminders push is macOS-only" }, null, 2),
+  );
+  process.exit(0);
+}
+
+let ranked;
+try {
+  ranked = JSON.parse(await readFile(args.ranked, "utf8"));
+} catch (err) {
+  process.stderr.write(`[push-reminders] cannot read ranked file ${args.ranked}: ${err.message}\n`);
+  process.exit(1);
+}
 
 // Decide what gets pushed.
 const items = [];

@@ -11,21 +11,17 @@ import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs, flagEnabled } from "./lib/cli.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = resolve(__dirname, "..", "config.local.json");
 
-const args = Object.fromEntries(
-  process.argv.slice(2).reduce((acc, arg, i, arr) => {
-    if (arg.startsWith("--")) acc.push([arg.replace(/^--/, ""), arr[i + 1]]);
-    return acc;
-  }, []),
-);
+const args = parseArgs();
 if (!args.ranked || !args.brief) {
   process.stderr.write("usage: push-all.mjs --ranked X.json --brief Y.md [--dry-run]\n");
   process.exit(2);
 }
-const dryRun = args["dry-run"] !== undefined && args["dry-run"] !== "false";
+const dryRun = flagEnabled(args["dry-run"]);
 
 let cfg = {};
 if (existsSync(CONFIG_PATH)) {

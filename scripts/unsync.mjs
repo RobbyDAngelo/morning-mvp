@@ -10,8 +10,10 @@
 
 import { spawn } from "node:child_process";
 import { loadSync, saveSync, getDay, clearDay } from "./sync-state.mjs";
+import { parseArgs, flagEnabled } from "./lib/cli.mjs";
 
 const TIMEOUT_MS = 60_000;
+const IS_MAC = (process.env.MORNING_MVP_PLATFORM || process.platform) === "darwin";
 
 function runAppleScript(script) {
   return new Promise((resolveP, reject) => {
@@ -22,6 +24,12 @@ function runAppleScript(script) {
       child.kill("SIGKILL");
       reject(new Error(`osascript timed out after ${TIMEOUT_MS}ms`));
     }, TIMEOUT_MS);
+    // Missing binary emits 'error' (not 'close'); reject cleanly so the
+    // caller's try/catch handles it instead of an uncaught crash.
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
     child.stdout.on("data", (c) => (stdout += c.toString("utf8")));
     child.stderr.on("data", (c) => (stderr += c.toString("utf8")));
     child.on("close", (code) => {
@@ -38,18 +46,13 @@ function asString(s) {
   return '"' + String(s ?? "").replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
 }
 
-const args = Object.fromEntries(
-  process.argv.slice(2).reduce((acc, arg, i, arr) => {
-    if (arg.startsWith("--")) acc.push([arg.replace(/^--/, ""), arr[i + 1]]);
-    return acc;
-  }, []),
-);
+const args = parseArgs();
 
 if (!args.date) {
   process.stderr.write("usage: unsync.mjs --date YYYY-MM-DD [--dry-run]\n");
   process.exit(2);
 }
-const dryRun = args["dry-run"] !== undefined && args["dry-run"] !== "false";
+const dryRun = flagEnabled(args["dry-run"]);
 
 const sync = await loadSync();
 const day = getDay(sync, args.date);
@@ -60,7 +63,30 @@ if (!day) {
 
 const report = { date: args.date, dry_run: dryRun, calendar_removed: [], reminders_removed: [], notion_flag: null };
 
-if (!dryRun) {
+if (!dryRun && !IS_MAC) {
+  // Apple Calendar / Reminders deletes need osascript, which is macOS-only.
+  // On Windows/Linux these were never created, so there is nothing to undo
+  // there; just surface anything recorded and move on to the Notion flag.
+  report.calendar_removed = (day.calendar ?? []).map((ev) => ({
+    title: ev.title,
+    skipped: "not removable on this platform (macOS only)",
+  }));
+  report.reminders_removed = (day.reminders ?? []).map((r) => ({
+    name: r.name,
+    skipped: "not removable on this platform (macOS only)",
+  }));
+  if (day.notion) {
+    report.notion_flag = {
+      page_id: day.notion.page_id,
+      url: day.notion.url,
+      instruction:
+        "Call Notion MCP to archive this page, then re-run unsync.mjs to clear the sync state.",
+    };
+  } else {
+    clearDay(sync, args.date);
+    await saveSync(sync);
+  }
+} else if (!dryRun) {
   // Calendar events
   for (const ev of day.calendar ?? []) {
     try {
