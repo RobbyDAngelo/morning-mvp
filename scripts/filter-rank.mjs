@@ -3,7 +3,7 @@
 // newsletter filter, builds the replied-index, scores each message, and writes
 // a ranked JSON ready for the LLM synthesis pass and for the renderer.
 
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { isLikelyNewsletter, isPersonalSender } from "./filters.mjs";
 import { buildVipSet, buildRepliedIndex, rankMessages } from "./rank.mjs";
 import { buildPeopleView } from "./people.mjs";
@@ -22,6 +22,7 @@ import { loadWeekState, mondayOf, decideAction } from "./weekly-arc.mjs";
 import { buildRecapData } from "./recap.mjs";
 import { loadResolvedIdentity } from "./identity-resolver.mjs";
 import { loadConfig } from "./lib/load-config.mjs";
+import { readJson } from "./lib/cli.mjs";
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, arg, i, arr) => {
@@ -39,15 +40,23 @@ if (!args.raw || !args.out) {
 // unconfigured, so behavior is unchanged on a fresh install.
 const filterOverrides = (await loadConfig())?.filters ?? {};
 
-const rawRoot = JSON.parse(await readFile(args.raw, "utf8"));
-// collect-all wraps mail and basecamp under named keys. Accept both shapes:
-// the orchestrator output `{mail: {...}, basecamp: {...}}` or the raw mail
-// output directly.
+let rawRoot;
+let notion;
+let basecamp;
+try {
+  rawRoot = await readJson(args.raw, { label: "raw data file" });
+  // collect-all wraps mail and basecamp under named keys. Accept both shapes:
+  // the orchestrator output `{mail: {...}, basecamp: {...}}` or the raw mail
+  // output directly.
+  notion = args.notion ? await readJson(args.notion, { label: "notion file" }) : null;
+  basecamp = args.basecamp
+    ? await readJson(args.basecamp, { label: "basecamp file" })
+    : rawRoot.basecamp ?? null;
+} catch (err) {
+  process.stderr.write(`[filter-rank] ${err.message}\n`);
+  process.exit(1);
+}
 const raw = rawRoot.mail ?? rawRoot;
-const notion = args.notion ? JSON.parse(await readFile(args.notion, "utf8")) : null;
-const basecamp = args.basecamp
-  ? JSON.parse(await readFile(args.basecamp, "utf8"))
-  : rawRoot.basecamp ?? null;
 
 const inbound = [...(raw.unread || []), ...(raw.recent_inbox || [])];
 

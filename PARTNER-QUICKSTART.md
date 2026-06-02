@@ -112,7 +112,7 @@ Claude executes the twelve-step workflow. The first run typically takes 60 to 18
 | Identity | `~/.claude/skills/morning-mvp/identity.local.json` |
 | Per-day raw data | `~/.claude/skills/morning-mvp/data/raw-<DATE>.json` |
 | Per-day ranked data | `~/.claude/skills/morning-mvp/data/ranked-<DATE>.json` |
-| Persistent state | `~/.claude/skills/morning-mvp/state/*.json` |
+| Persistent state | `~/.claude/skills/morning-mvp/data/state.json`, `week-state.json`, `people-facts.json`, `trends.json`, `sync-state.json` |
 | Brief output | `~/morning-brief/<DATE>.md` and `<DATE>.html` |
 
 On Windows replace `~` with `%USERPROFILE%`.
@@ -138,11 +138,18 @@ Once set up, just type "morning brief" at the start of your day. The skill remem
 - Per-person facts grow over time. You see "What I know about Sarah" build up after a few weeks.
 - Sunday gets you a weekly recap with sparklines.
 
-To wipe state and start fresh:
+To wipe state and start fresh (removes aging timestamps, weekly mission, and
+per-person facts; the per-day cache regenerates next run):
 
 ```bash
-rm -rf ~/.claude/skills/morning-mvp/state/*.json
+rm -f ~/.claude/skills/morning-mvp/data/state.json \
+      ~/.claude/skills/morning-mvp/data/week-state.json \
+      ~/.claude/skills/morning-mvp/data/people-facts.json \
+      ~/.claude/skills/morning-mvp/data/trends.json \
+      ~/.claude/skills/morning-mvp/data/sync-state.json
 ```
+
+On Windows (PowerShell): `Remove-Item $env:USERPROFILE\.claude\skills\morning-mvp\data\state.json, ...\week-state.json, ...\people-facts.json, ...\trends.json, ...\sync-state.json -ErrorAction SilentlyContinue`
 
 To remove the skill entirely:
 

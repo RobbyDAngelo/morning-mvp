@@ -245,7 +245,7 @@ Optional integer: window in days. Default 7. If Robby says "morning brief 14" th
     ```
 
     Each target gated by `config.local.json` `sync.<target>.enabled`. Defaults are OFF until user opts in:
-    - **calendar (PREFERRED via Fantastical)**: instead of running `push-calendar.mjs`, call `mcp__Fantastical__createCalendarItem` with a natural-language `description` like `"Deep work: <One Thing> tomorrow 6am for 90 minutes"`. Pick the right `calendarId` from `mcp__Fantastical__queryCalendars` (Robby's preferred default is the `robby@narrowgate.group` calendar for business deep-work, `robby@robbydangelo.com` for personal). After it returns, run:
+    - **calendar (macOS, PREFERRED via Fantastical)**: instead of running `push-calendar.mjs`, call `mcp__Fantastical__createCalendarItem` with a natural-language `description` like `"Deep work: <One Thing> tomorrow 6am for 90 minutes"`. Pick the right `calendarId` from `mcp__Fantastical__queryCalendars` (use the user's preferred work calendar, or `config.local.json` `sync.calendar.calendar_name` if set, else the first writable one). On Windows / Linux, create the block via the Google Calendar MCP instead. After it returns, run:
 
        ```bash
        node <skill-root>/scripts/record-calendar-event.mjs \

@@ -4,7 +4,7 @@
     "account_id": "0000000",
     "user_id": "0000000",
     "access_token": "YOUR_BASECAMP_ACCESS_TOKEN",
-    "user_agent": "morning-mvp (robby@robbydangelo.com)"
+    "user_agent": "morning-mvp"
   },
   "filters": {
     "_comment": "Per-user overrides on top of the built-in newsletter rules. Domains match subdomains too (scaleupmedia.com drops reply.scaleupmedia.com). Allowlist wins over droplist wins over heuristics.",

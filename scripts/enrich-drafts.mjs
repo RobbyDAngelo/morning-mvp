@@ -6,10 +6,11 @@
 // Reads ranked-DATE.json, mutates it in place by replacing draft_reply_targets
 // with body-enriched entries plus a prior_thread excerpt where possible.
 
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readJson } from "./lib/cli.mjs";
 import { homedir } from "node:os";
 
 const APPLE_MAIL_ROOT = process.env.APPLE_MAIL_MCP_ROOT ?? resolve(homedir(), "apple-mail-mcp");
@@ -54,7 +55,13 @@ if (!APPLE_MAIL_AVAILABLE) {
 
 const { getMessage } = await import(`${APPLE_MAIL_ROOT}/src/mail/messages.ts`);
 
-const ranked = JSON.parse(await readFile(args.ranked, "utf8"));
+let ranked;
+try {
+  ranked = await readJson(args.ranked, { label: "ranked file" });
+} catch (err) {
+  process.stderr.write(`[enrich-drafts] ${err.message}\n`);
+  process.exit(1);
+}
 const targets = ranked.draft_reply_targets ?? [];
 if (targets.length === 0) {
   process.stderr.write("[enrich-drafts] no draft_reply_targets to enrich, nothing to do\n");

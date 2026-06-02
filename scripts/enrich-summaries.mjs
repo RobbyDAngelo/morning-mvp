@@ -20,11 +20,12 @@
 //   enrich-summaries.mjs --ranked path/to/ranked.json
 //                        [--max 25] [--body-limit 600] [--concurrency 4]
 
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
+import { readJson } from "./lib/cli.mjs";
 
 const APPLE_MAIL_ROOT = process.env.APPLE_MAIL_MCP_ROOT ?? resolve(homedir(), "apple-mail-mcp");
 process.env.APPLE_MAIL_MCP_TIMEOUT_MS = process.env.APPLE_MAIL_MCP_TIMEOUT_MS ?? "60000";
@@ -58,7 +59,13 @@ if (APPLE_MAIL_AVAILABLE) {
   ({ getMessage } = await import(`${APPLE_MAIL_ROOT}/src/mail/messages.ts`));
 }
 
-const ranked = JSON.parse(await readFile(args.ranked, "utf8"));
+let ranked;
+try {
+  ranked = await readJson(args.ranked, { label: "ranked file" });
+} catch (err) {
+  process.stderr.write(`[enrich-summaries] ${err.message}\n`);
+  process.exit(1);
+}
 
 // Collect unique message_ids across every bucket that benefits from a summary.
 // Priority order: waiting_on_me, decisions_waiting, responses_waiting, then

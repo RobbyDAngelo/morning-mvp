@@ -137,17 +137,21 @@ try {
 # 6. Smoke test.
 Write-Info "running smoke test (npm test)"
 $TestLogPath = Join-Path $env:TEMP "morning-mvp-install-test.log"
+$TestExit = 1
 Push-Location $InstallRoot
 try {
-  $TestOutput = & npm test --silent 2>&1
-  $TestOutput | Out-File -FilePath $TestLogPath -Encoding UTF8
-  if ($LASTEXITCODE -ne 0) {
-    Write-Warn "smoke test FAILED. Last lines:"
-    Get-Content $TestLogPath -Tail 20 | ForEach-Object { Write-Host $_ }
-    Write-Fail "Install aborted. Full log: $TestLogPath"
-  }
+  # Redirect ALL streams to the log with *> (no trailing cmdlet in the
+  # pipeline), then capture $LASTEXITCODE on the very next line so it
+  # unambiguously reflects npm's exit code on Windows (npm is npm.cmd).
+  & npm test --silent *> $TestLogPath
+  $TestExit = $LASTEXITCODE
 } finally {
   Pop-Location
+}
+if ($TestExit -ne 0) {
+  Write-Warn "smoke test FAILED (exit $TestExit). Last lines:"
+  Get-Content $TestLogPath -Tail 20 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+  Write-Fail "Install aborted. Full log: $TestLogPath"
 }
 Remove-Item $TestLogPath -ErrorAction SilentlyContinue
 Write-Info "smoke test passed"

@@ -45,7 +45,7 @@ console.log("");
 console.log("In the form, paste these exactly:");
 console.log("  Name of your application:       morning-mvp");
 console.log("  Company:                        (your own)");
-console.log("  Website URL:                    https://robbydangelo.com");
+console.log("  Website URL:                    (your own website, or https://example.com)");
 console.log("  Products used:                  check 'Basecamp 4' (or whichever you use)");
 console.log("  Redirect URI:                   " + REDIRECT_URI);
 console.log("");
@@ -164,7 +164,7 @@ const cfg = {
     refresh_token: refreshToken,
     client_id: clientId,
     client_secret: clientSecret,
-    user_agent: existing?.basecamp?.user_agent || "morning-mvp (robby@robbydangelo.com)",
+    user_agent: existing?.basecamp?.user_agent || "morning-mvp",
   },
   filters: existing.filters || {
     always_include_senders: [],

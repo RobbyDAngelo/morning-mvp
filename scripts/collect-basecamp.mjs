@@ -94,7 +94,7 @@ const { account_id, user_id, access_token, user_agent } = cfgEffective.basecamp;
 const API_BASE = `https://3.basecampapi.com/${account_id}`;
 const HEADERS = {
   Authorization: `Bearer ${access_token}`,
-  "User-Agent": user_agent || "morning-mvp (robby@robbydangelo.com)",
+  "User-Agent": user_agent || "morning-mvp",
   Accept: "application/json",
 };
 

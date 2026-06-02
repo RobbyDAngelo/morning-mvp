@@ -13,6 +13,35 @@
 //    crashes the caller.
 
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
+
+/**
+ * Read and parse a JSON file with a clear, actionable error instead of an
+ * uncaught stack trace when the file is missing or truncated (e.g. a
+ * half-written run-output from an interrupted collect-all).
+ *
+ * @param {string} path
+ * @param {{ label?: string }} [opts]
+ * @returns {Promise<any>}
+ * @throws {Error} with a human-readable message
+ */
+export async function readJson(path, { label } = {}) {
+  const what = label ?? path;
+  let text;
+  try {
+    text = await readFile(path, "utf8");
+  } catch (err) {
+    throw new Error(`cannot read ${what} (${path}): ${err.message}`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(
+      `${what} (${path}) is not valid JSON, it may be corrupt or truncated from an ` +
+        `interrupted run; re-run the prior step. (${err.message})`,
+    );
+  }
+}
 
 /**
  * Parse `--key value` and `--flag` arguments into an object.
