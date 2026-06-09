@@ -75,11 +75,22 @@ export async function collectMail({ days, config: _config = {} } = {}) {
   const accounts = (await safe("listAccounts", () => listAccounts())) ?? [];
   process.stderr.write(`[apple-mail] ${accounts.length} accounts, window ${windowDays}d\n`);
 
-  // 1. Unread across all account inboxes (newest first), within the window.
-  const unread =
-    (await safe("getUnreadMessages", () =>
-      getUnreadMessages({ limit: 300, since_days: windowDays }),
-    )) ?? [];
+  // 1. Unread per account inbox, within the window. Split per-account (was a
+  //    single all-accounts call that timed out and fell back to zero unread).
+  //    Per-account isolates a wedged account and keeps each scan small.
+  const unreadSeen = new Set();
+  const unread = [];
+  for (const acct of accounts) {
+    const r = await safe(`getUnreadMessages(${acct.name})`, () =>
+      getUnreadMessages({ account: acct.name, limit: 100, since_days: windowDays }),
+    );
+    for (const m of r ?? []) {
+      const key = m.message_id || `${m.account}|${m.subject}|${m.date_received}`;
+      if (unreadSeen.has(key)) continue;
+      unreadSeen.add(key);
+      unread.push(m);
+    }
+  }
 
   // 2. Recent inbox (read + unread) per account inbox. Limit per call to avoid
   //    Mail.app stalls; aggregate in Node.

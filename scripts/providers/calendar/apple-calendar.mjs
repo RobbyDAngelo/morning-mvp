@@ -10,7 +10,12 @@
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
 
-const TIMEOUT_MS = Number(process.env.APPLE_MAIL_MCP_TIMEOUT_MS ?? 60_000);
+// Calendar.app's per-calendar date scan is slow on large histories; 60s was
+// timing out. Default 120s, dedicated override knob. Fantastical MCP is the
+// preferred fast path; this is the fallback.
+const TIMEOUT_MS = Number(
+  process.env.MORNING_MVP_CALENDAR_TIMEOUT_MS ?? process.env.APPLE_MAIL_MCP_TIMEOUT_MS ?? 120_000,
+);
 const REC_SEP = "";
 const FIELD_SEP = "";
 
