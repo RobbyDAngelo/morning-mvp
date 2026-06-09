@@ -4,7 +4,7 @@
 // Why this lives in its own module: every rule here is unit-testable in isolation,
 // and the rule set is the most likely thing to need tuning over time.
 
-const NOREPLY_SENDER_RE = /(noreply|no[\-_.]?reply|notifications?|newsletter|digest|marketing|do[\-_]?not[\-_]?reply|mailer[\-_]?daemon|postmaster|automated?|alerts?|reminders?|updates?|bounce|mailbot|notify)@/i;
+const NOREPLY_SENDER_RE = /(noreply|no[\-_.]?reply|auto[\-_.]?reply|notifications?|newsletter|digest|marketing|do[\-_]?not[\-_]?reply|mailer[\-_]?daemon|postmaster|automated?|alerts?|reminders?|updates?|bounce|mailbot|notify)@/i;
 
 // Domain blocklist: well-known marketing/automation senders. Conservative; only
 // add domains where messages are almost never personal.

@@ -22,6 +22,20 @@ test("isLikelyNewsletter catches Mailchimp domain", () => {
   assert.equal(v.drop, true);
 });
 
+test("isLikelyNewsletter catches auto-reply local parts (USPS-style)", () => {
+  // Regression: auto-reply@ was slipping through (automated? did not match it).
+  for (const addr of [
+    "auto-reply@tracking.usps.com",
+    "autoreply@example.com",
+    "auto.reply@example.com",
+    "auto_reply@example.com",
+  ]) {
+    const v = isLikelyNewsletter({ sender: `Notice <${addr}>`, subject: "Your package" });
+    assert.equal(v.drop, true, `${addr} should be dropped`);
+    assert.ok(v.reasons.some((r) => r.startsWith("sender_pattern")));
+  }
+});
+
 test("isLikelyNewsletter catches Stripe payment confirmations", () => {
   const v = isLikelyNewsletter({
     sender: "Stripe <receipts@stripe.com>",
