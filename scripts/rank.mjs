@@ -103,6 +103,17 @@ function extractEmail(senderRaw) {
 export function buildRepliedIndex(inbound, sent) {
   const replied = new Set();
 
+  // Primary signal: Mail's per-message reply flag (the IMAP \Answered flag,
+  // exposed as `was_replied_to`). True when the user replied from ANY client
+  // (Mail.app, web, phone), so it works even when the Sent folder is not
+  // synced locally. No false positives: a set \Answered flag means a reply
+  // was sent.
+  for (const m of inbound) {
+    if (m.was_replied_to === true && m.message_id) replied.add(m.message_id);
+  }
+
+  // Supplemental signal: Sent-folder subject + date cross-reference. Only adds
+  // value when the Sent folder is actually synced locally.
   const normSubj = (s) => (s ?? "").replace(/^(re|fwd):\s*/i, "").trim().toLowerCase();
   const inboundBySubj = new Map();
   for (const m of inbound) {

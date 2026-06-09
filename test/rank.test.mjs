@@ -73,6 +73,31 @@ test("buildRepliedIndex matches Re: subject from sent later than inbound", () =>
   assert.equal(replied.has("id-2"), false);
 });
 
+test("buildRepliedIndex uses was_replied_to even with NO sent data (the Mail \\Answered fix)", () => {
+  // The real-world case: Sent folder is empty/unsynced, but Mail's per-message
+  // reply flag is set because the user replied from web/phone.
+  const inbound = [
+    { message_id: "id-1", subject: "Contract", date_received: "Mon, May 5, 2026 at 9:00 AM", was_replied_to: true },
+    { message_id: "id-2", subject: "FYI", date_received: "Mon, May 5, 2026 at 10:00 AM", was_replied_to: false },
+    { message_id: "id-3", subject: "No flag field", date_received: "Mon, May 5, 2026 at 11:00 AM" },
+  ];
+  const replied = buildRepliedIndex(inbound, []); // empty sent
+  assert.ok(replied.has("id-1"), "was_replied_to:true should mark replied without any sent data");
+  assert.equal(replied.has("id-2"), false, "was_replied_to:false stays unreplied");
+  assert.equal(replied.has("id-3"), false, "missing flag is treated as unreplied");
+});
+
+test("buildRepliedIndex combines was_replied_to with the sent cross-reference", () => {
+  const inbound = [
+    { message_id: "a", subject: "Deck", date_received: "Mon, May 5, 2026 at 9:00 AM", was_replied_to: true },
+    { message_id: "b", subject: "Invoice", date_received: "Mon, May 5, 2026 at 9:00 AM" },
+  ];
+  const sent = [{ subject: "Re: Invoice", date_received: "Mon, May 5, 2026 at 11:00 AM" }];
+  const replied = buildRepliedIndex(inbound, sent);
+  assert.ok(replied.has("a"), "flag signal");
+  assert.ok(replied.has("b"), "sent cross-reference signal");
+});
+
 test("scoreMessage flags waiting_on_me when unreplied + asks", () => {
   const m = {
     message_id: "id-1",
